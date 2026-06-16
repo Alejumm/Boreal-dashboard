@@ -109,8 +109,8 @@ const diasColor = d => d>90?"#D85A30":d>30?"#EF9F27":"#5DCAA5";
 const CHART_H = 150;
 
 let DATA = null;
-let view = "mensual";
 const params = new URLSearchParams(window.location.search);
+let view = params.get("vista") || "mensual";
 let asesor = params.get("asesor") || "ARLEY";
 
 // ─── CARGA DE DATOS ──────────────────────────────────────────────────────────
