@@ -110,7 +110,8 @@ const CHART_H = 150;
 
 let DATA = null;
 let view = "mensual";
-let asesor = "ARLEY";
+const params = new URLSearchParams(window.location.search);
+let asesor = params.get("asesor") || "ARLEY";
 
 // ─── CARGA DE DATOS ──────────────────────────────────────────────────────────
 
