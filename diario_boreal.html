@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boreal S.A.S. — Recaudo Diario</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0F1923; font-family: 'Inter','Segoe UI',sans-serif; color: #fff; min-height: 100vh; }
+.header { background: #0A141E; border-bottom: 1px solid #1E2D42; padding: 14px 20px; }
+.header-title { font-size: 16px; font-weight: 700; }
+.header-sub { font-size: 11px; color: #7A8EA0; margin-top: 2px; }
+.content { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+
+.summary-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.summary-card { background: #1A2535; border-radius: 10px; padding: 14px 16px; flex: 1; min-width: 160px; }
+.summary-label { font-size: 10px; color: #7A8EA0; margin-bottom: 4px; }
+.summary-value { font-size: 18px; font-weight: 700; color: #fff; }
+
+.table-card { background: #1A2535; border-radius: 12px; padding: 16px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { padding: 10px 12px; text-align: right; font-size: 12px; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: #1A2535; }
+thead th { color: #7A8EA0; font-weight: 600; font-size: 11px; border-bottom: 1px solid #253545; }
+tbody tr:nth-child(odd) { background: #162030; }
+tbody td { color: #C0D0E0; }
+tbody td.zero { color: #4A5A6A; }
+tfoot td { font-weight: 700; color: #1D9E75; border-top: 1px solid #253545; }
+tfoot td:first-child { color: #fff; }
+
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; gap: 16px; }
+.spinner { width: 36px; height: 36px; border: 3px solid #253545; border-top-color: #1D9E75; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #7A8EA0; }
+.refresh-btn { background: #1A2535; border: 1px solid #253545; color: #7A8EA0; border-radius: 6px; padding: 5px 14px; font-size: 11px; cursor: pointer; margin-top: 10px; }
+.refresh-btn:hover { color: #C0D0E0; border-color: #1D9E75; }
+.error-state { text-align: center; padding: 40px; color: #D85A30; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">Boreal S.A.S.</div>
+  <div class="header-sub" id="headerSub">Recaudo diario — Cargando...</div>
+</div>
+
+<div class="content" id="content">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Leyendo datos del Sheet...</div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+const API_URL = "https://script.google.com/macros/s/AKfycbzIuIBmcAlvzro4h3bdZUtM9qUpO4cXusUqCEQQiR9qTU2XJacrUM_CMwMBm9ZyfW_kTw/exec";
+
+const fmt = n => "$" + Math.round(n).toLocaleString("es-CO");
+
+async function cargarDatos() {
+  try {
+    const res  = await fetch(API_URL);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    render(json);
+  } catch (err) {
+    document.getElementById("content").innerHTML = `
+      <div class="error-state">
+        <p>Error al cargar los datos</p>
+        <p style="font-size:11px;color:#7A8EA0;margin-top:8px">${err.message}</p>
+        <button class="refresh-btn" onclick="cargarDatos()">Reintentar</button>
+      </div>`;
+  }
+}
+
+function render(data) {
+  const d = data.diario;
+  const asesores = Object.keys(d.porAsesor);
+
+  document.getElementById("headerSub").textContent =
+    "Recaudo diario — Semana en curso · " + data.mes_label;
+
+  // Mejor día y mejor asesor
+  let mejorDiaIdx = 0;
+  d.totalesDia.forEach((v,i) => { if (v > d.totalesDia[mejorDiaIdx]) mejorDiaIdx = i; });
+
+  let mejorAsesor = asesores[0], mejorAsesorTotal = 0;
+  asesores.forEach(a => {
+    const t = d.porAsesor[a].reduce((s,v)=>s+v,0);
+    if (t > mejorAsesorTotal) { mejorAsesorTotal = t; mejorAsesor = a; }
+  });
+
+  let html = `
+    <div class="summary-row">
+      <div class="summary-card">
+        <div class="summary-label">Total recaudado (semana)</div>
+        <div class="summary-value">${fmt(d.totalSemana)}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Mejor día</div>
+        <div class="summary-value">${d.dias[mejorDiaIdx]} — ${fmt(d.totalesDia[mejorDiaIdx])}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Asesor líder en recaudo</div>
+        <div class="summary-value">${mejorAsesor} — ${fmt(mejorAsesorTotal)}</div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Asesor</th>
+            ${d.dias.map(dia => `<th>${dia}</th>`).join("")}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${asesores.map(a => {
+            const fila = d.porAsesor[a];
+            const total = fila.reduce((s,v)=>s+v,0);
+            return `<tr>
+              <td>${a}</td>
+              ${fila.map(v => `<td class="${v===0?'zero':''}">${v===0?'—':fmt(v)}</td>`).join("")}
+              <td style="color:#1D9E75;font-weight:600">${fmt(total)}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>TOTAL</td>
+            ${d.totalesDia.map(v => `<td>${fmt(v)}</td>`).join("")}
+            <td>${fmt(d.totalSemana)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+
+  document.getElementById("content").innerHTML = html;
+}
+
+cargarDatos();
+</script>
+</body>
+</html>
