@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boreal S.A.S. — Reporte Comercial</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0F1923; font-family: 'Inter','Segoe UI',sans-serif; color: #fff; min-height: 100vh; }
+.header { background: #0A141E; border-bottom: 1px solid #1E2D42; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.header-title { font-size: 16px; font-weight: 700; }
+.header-sub { font-size: 11px; color: #7A8EA0; margin-top: 2px; }
+.view-tabs { display: flex; background: #0F1923; border: 1px solid #253545; border-radius: 8px; overflow: hidden; }
+.view-tab { border: none; background: transparent; color: #7A8EA0; font-size: 13px; font-weight: 500; padding: 8px 28px; cursor: pointer; transition: all 0.2s; }
+.view-tab.active { background: #fff; color: #0F1923; font-weight: 700; }
+.content { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+
+.banner { background: linear-gradient(135deg,#0A2A1E 0%,#1A2535 100%); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; border-left: 4px solid #1D9E75; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.banner-name { font-size: 20px; font-weight: 700; color: #1D9E75; }
+.banner-sub { font-size: 12px; color: #C0D0E0; margin-top: 3px; }
+.var-badge { border-radius: 8px; padding: 8px 14px; text-align: center; }
+.var-label { font-size: 10px; color: #7A8EA0; }
+.var-value { font-size: 16px; font-weight: 700; margin-top: 2px; }
+
+.kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+@media(max-width:640px){ .kpis { grid-template-columns: repeat(2,1fr); } }
+.kpi { background: #1A2535; border-radius: 10px; padding: 14px 12px; }
+.kpi-label { font-size: 10px; color: #7A8EA0; margin-bottom: 4px; }
+.kpi-value { font-size: 17px; font-weight: 700; color: #fff; line-height: 1.2; }
+.kpi-sub { font-size: 10px; margin-top: 4px; }
+
+.card { background: #1A2535; border-radius: 12px; padding: 18px 16px; margin-bottom: 16px; }
+.card-title { font-size: 12px; font-weight: 600; color: #C0D0E0; margin-bottom: 14px; }
+
+.progress-card { background: #162030; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+.progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.progress-label { font-size: 12px; color: #C0D0E0; }
+.progress-pct { font-size: 13px; font-weight: 700; }
+.progress-bar-bg { height: 8px; background: #0F1923; border-radius: 4px; overflow: hidden; }
+.progress-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+.progress-foot { font-size: 11px; color: #7A8EA0; margin-top: 6px; }
+
+.chart-wrap { display: flex; align-items: flex-end; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 85px; }
+.bars-row { display: flex; gap: 4px; align-items: flex-end; justify-content: center; }
+.bar-col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.bar-val { font-size: 9px; font-weight: 600; white-space: nowrap; }
+.bar-rect { border-radius: 3px 3px 0 0; transition: height 0.4s; min-height: 3px; width: 26px; }
+.bar-lbl { font-size: 9px; color: #7A8EA0; margin-top: 6px; text-align: center; white-space: nowrap; }
+.chart-legend { display: flex; gap: 14px; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #7A8EA0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+.filters-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters-row select { flex: 1; min-width: 140px; background: #162030; color: #C0D0E0; border: 1px solid #253545; border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+
+.table-header { display: grid; padding: 6px 10px; border-bottom: 1px solid #253545; margin-bottom: 4px; }
+.table-header span { font-size: 10px; color: #7A8EA0; font-weight: 600; }
+.table-row { display: grid; padding: 9px 10px; border-radius: 6px; margin-bottom: 2px; align-items: center; }
+.table-row:nth-child(odd) { background: #162030; }
+.row-c { font-size: 12px; color: #C0D0E0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-r { font-size: 12px; text-align: right; }
+.empty-state { text-align: center; padding: 24px; color: #7A8EA0; font-size: 13px; }
+
+.cartera-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 6px; }
+
+.ranking-item { padding: 8px 10px; border-radius: 8px; margin-bottom: 5px; }
+.ranking-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.rank-bar-bg { height: 4px; background: #253545; border-radius: 2px; }
+.rank-bar-fill { height: 100%; border-radius: 2px; }
+
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; gap: 16px; }
+.spinner { width: 36px; height: 36px; border: 3px solid #253545; border-top-color: #1D9E75; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #7A8EA0; }
+.refresh-btn { background: #1A2535; border: 1px solid #253545; color: #7A8EA0; border-radius: 6px; padding: 5px 14px; font-size: 11px; cursor: pointer; }
+.refresh-btn:hover { color: #C0D0E0; border-color: #1D9E75; }
+.error-state { text-align: center; padding: 40px; color: #D85A30; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">Boreal S.A.S.</div>
+    <div class="header-sub" id="headerSub">Cargando...</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="refresh-btn" onclick="cargarDatos()">↻ Actualizar</button>
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabMensual" onclick="setView('mensual')">Mensual</button>
+      <button class="view-tab" id="tabSemanal" onclick="setView('semanal')">Semanal</button>
+    </div>
+  </div>
+</div>
+
+<div class="content" id="content">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Validando acceso...</div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+const API_URL = "TU_URL_DE_APPS_SCRIPT_AQUI";
+
+const fmt  = n => "$" + Math.round(n).toLocaleString("es-CO");
+const fmtM = n => n>=1000000 ? "$"+(n/1000000).toFixed(1)+"M" : n>=1000 ? "$"+(n/1000).toFixed(0)+"K" : "$"+Math.round(n);
+const pct  = n => n.toFixed(1)+"%";
+const diasColor = d => d>90?"#D85A30":d>30?"#EF9F27":"#5DCAA5";
+const CHART_H = 150;
+
+let DATA = null;
+let view = "mensual";
+let filtroRuta = "todas";
+let filtroCliente = "todos";
+
+const params = new URLSearchParams(window.location.search);
+const ID_ASESOR = (params.get("id") || "").toUpperCase();
+const CLAVE     = params.get("clave") || "";
+
+// ─── CARGA DE DATOS ──────────────────────────────────────────────────────────
+
+async function cargarDatos() {
+  if (!ID_ASESOR || !CLAVE) {
+    document.getElementById("content").innerHTML = `
+      <div class="error-state">
+        <p>Link incompleto</p>
+        <p style="font-size:11px;color:#7A8EA0;margin-top:8px">Falta el identificador o la clave de acceso.</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById("content").innerHTML = `
+    <div class="loading">
+      <div class="spinner"></div>
+      <div class="loading-text">Leyendo datos del Sheet...</div>
+    </div>`;
+
+  try {
+    const url = `${API_URL}?tipo=asesor&id=${encodeURIComponent(ID_ASESOR)}&clave=${encodeURIComponent(CLAVE)}`;
+    const res  = await fetch(url);
+    const json = await res.json();
+
+    if (json.error) throw new Error(json.error);
+
+    DATA = json;
+    render();
+  } catch (err) {
+    document.getElementById("content").innerHTML = `
+      <div class="error-state">
+        <p>No se pudo cargar el reporte</p>
+        <p style="font-size:11px;color:#7A8EA0;margin-top:8px">${err.message}</p>
+        <button class="refresh-btn" style="margin-top:16px" onclick="cargarDatos()">Reintentar</button>
+      </div>`;
+  }
+}
+
+// ─── NAVEGACIÓN ──────────────────────────────────────────────────────────────
+
+function setView(v) {
+  view = v;
+  document.getElementById("tabMensual").classList.toggle("active", v==="mensual");
+  document.getElementById("tabSemanal").classList.toggle("active", v==="semanal");
+  render();
+}
+
+function setFiltroRuta(v)    { filtroRuta = v;    renderSemanal(); }
+function setFiltroCliente(v) { filtroCliente = v; renderSemanal(); }
+
+function render() {
+  if (!DATA) return;
+  document.getElementById("headerSub").textContent =
+    DATA.asesor + " — " + (view==="mensual" ? DATA.mes_label : "Semana en curso");
+  view==="mensual" ? renderMensual() : renderSemanal();
+}
+
+// ─── CHART ───────────────────────────────────────────────────────────────────
+
+function chart(tend, key) {
+  const maxV = Math.max(...tend.map(t => Math.max(t.ventas, t.abonos||0)), 1);
+  return tend.map((t, i) => {
+    const last = i === tend.length - 1;
+    const hV = Math.max(4, Math.round((t.ventas/maxV)*CHART_H));
+    const hA = Math.max(4, Math.round(((t.abonos||0)/maxV)*CHART_H));
+    return `<div class="bar-group" style="opacity:${last?1:0.65}">
+      <div class="bars-row">
+        <div class="bar-col">
+          <span class="bar-val" style="color:#5DCAA5">${fmtM(t.ventas)}</span>
+          <div class="bar-rect" style="height:${hV}px;background:${last?"#1D9E75":"#1D6E55"}"></div>
+        </div>
+        <div class="bar-col">
+          <span class="bar-val" style="color:#FAC775">${fmtM(t.abonos||0)}</span>
+          <div class="bar-rect" style="height:${hA}px;background:${last?"#EF9F27":"#A06A15"}"></div>
+        </div>
+      </div>
+      <div class="bar-lbl" style="${last?"color:#1D9E75;font-weight:600":""}">${t[key]}${last?" ◀":""}</div>
+    </div>`;
+  }).join("");
+}
+
+function progressBar(label, pctVal, color, foot) {
+  const w = Math.min(100, Math.max(0, pctVal));
+  return `
+    <div class="progress-card">
+      <div class="progress-head">
+        <span class="progress-label">${label}</span>
+        <span class="progress-pct" style="color:${color}">${pctVal.toFixed(0)}%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${w}%;background:${color}"></div>
+      </div>
+      <div class="progress-foot">${foot}</div>
+    </div>`;
+}
+
+// ─── MENSUAL ─────────────────────────────────────────────────────────────────
+
+function renderMensual() {
+  const d = DATA.mensual;
+  const up = d.var_ventas >= 0;
+  const efC = d.eficiencia>=70?"#5DCAA5":d.eficiencia>=50?"#EF9F27":"#D85A30";
+
+  const colVentas  = d.cumplimiento_ventas  >= 100 ? "#5DCAA5" : d.cumplimiento_ventas  >= 70 ? "#EF9F27" : "#D85A30";
+  const colCartera = d.cumplimiento_cartera >= 100 ? "#5DCAA5" : d.cumplimiento_cartera >= 70 ? "#EF9F27" : "#D85A30";
+
+  document.getElementById("content").innerHTML = `
+    <div class="banner">
+      <div>
+        <div class="banner-name">${DATA.asesor}</div>
+        <div class="banner-sub">#${d.ranking} en el equipo · Eficiencia: ${pct(d.eficiencia)} · ${DATA.mes_label}</div>
+      </div>
+      <div class="var-badge" style="background:${up?"#0A2A1E":"#2A1010"};border:1px solid ${up?"#1D9E75":"#D85A30"}">
+        <div class="var-label">vs mes anterior</div>
+        <div class="var-value" style="color:${up?"#5DCAA5":"#D85A30"}">${up?"↑":"↓"} ${Math.abs(d.var_ventas)}%</div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      ${[
+        {l:"Ventas del mes",   v:fmt(d.ventas),   s:`${d.facturas} facturas · ${d.clientes_unicos} clientes`, c:"#7A8EA0"},
+        {l:"Recaudo del mes",  v:fmt(d.abonos),   s:`${pct(d.eficiencia)} de lo vendido`,                     c:efC},
+        {l:"Comisión del mes", v:fmt(d.comision), s:"Calculada automáticamente",                              c:"#FAC775"},
+        {l:"Cartera activa",   v:fmt(d.cartera_total), s:`${d.cartera.length} clientes con saldo`,            c:"#D85A30"},
+      ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value">${k.v}</div><div class="kpi-sub" style="color:${k.c}">${k.s}</div></div>`).join("")}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Cumplimiento del mes</div>
+      ${progressBar(
+        "Presupuesto de ventas", d.cumplimiento_ventas, colVentas,
+        `Meta: ${fmt(d.presupuesto_ventas)} (ventas mismo mes año anterior)`
+      )}
+      ${progressBar(
+        "Presupuesto de cartera (recaudo)", d.cumplimiento_cartera, colCartera,
+        `Meta: ${fmt(d.presupuesto_cartera)} (70% de la cartera activa)`
+      )}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Tendencia ${DATA.mes_label.split(" ")[1]} — Ventas vs Recaudo</div>
+      <div class="chart-wrap">${chart(d.tendencia,"mes")}</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>Ventas</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>Recaudo</div>
+      </div>
+    </div>`;
+}
+
+// ─── SEMANAL ─────────────────────────────────────────────────────────────────
+
+function renderSemanal() {
+  const d = DATA.semanal;
+  const up = d.var_ventas >= 0;
+  const efC = d.eficiencia>=70?"#5DCAA5":d.eficiencia>=50?"#EF9F27":"#D85A30";
+
+  let facturas = d.detalleFacturas || [];
+  if (filtroRuta !== "todas")    facturas = facturas.filter(f => f.ruta === filtroRuta);
+  if (filtroCliente !== "todos") facturas = facturas.filter(f => f.cliente === filtroCliente);
+
+  const totalFiltrado = facturas.reduce((s,f) => s + f.saldo, 0);
+
+  document.getElementById("content").innerHTML = `
+    <div class="banner">
+      <div>
+        <div class="banner-name">${DATA.asesor}</div>
+        <div class="banner-sub">Semana ${d.sem_label} · ${d.facturas_sem} facturas · ${d.clientes_sem} clientes</div>
+      </div>
+      <div class="var-badge" style="background:${up?"#0A2A1E":"#2A1010"};border:1px solid ${up?"#1D9E75":"#D85A30"}">
+        <div class="var-label">vs semana anterior</div>
+        <div class="var-value" style="color:${up?"#5DCAA5":"#D85A30"}">${up?"↑":"↓"} ${Math.abs(d.var_ventas)}%</div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      ${[
+        {l:"Ventas esta semana",  v:fmt(d.ventas_sem), s:`vs sem. ant.: ${fmtM(d.tendencia[3]?.ventas||0)}`, c:"#7A8EA0"},
+        {l:"Recaudo esta semana", v:fmt(d.abonos_sem), s:`${pct(d.eficiencia)} de lo vendido`,              c:efC},
+        {l:"Facturas emitidas",   v:String(d.facturas_sem), s:`${d.clientes_sem} clientes únicos`,          c:"#7A8EA0"},
+        {l:"Total por recaudar",  v:fmt((d.detalleFacturas||[]).reduce((s,f)=>s+f.saldo,0)), s:`${(d.detalleFacturas||[]).length} facturas pendientes`, c:"#D85A30"},
+      ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value">${k.v}</div><div class="kpi-sub" style="color:${k.c}">${k.s}</div></div>`).join("")}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Tendencia — Últimas 5 semanas</div>
+      <div class="chart-wrap">${chart(d.tendencia,"sem")}</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>Ventas</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>Recaudo</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cartera-header">
+        <div class="card-title" style="margin-bottom:0;color:#D85A30">Pendiente de cobro</div>
+        <div style="font-size:11px;color:#D85A30">${facturas.length} facturas · Total: ${fmt(totalFiltrado)}</div>
+      </div>
+
+      <div class="filters-row">
+        <select onchange="setFiltroRuta(this.value)">
+          <option value="todas">Ruta: todas</option>
+          ${(d.rutasDisponibles||[]).map(r => `<option value="${r}" ${filtroRuta===r?"selected":""}>${r}</option>`).join("")}
+        </select>
+        <select onchange="setFiltroCliente(this.value)">
+          <option value="todos">Cliente: todos</option>
+          ${(d.clientesDisponibles||[]).map(c => `<option value="${c}" ${filtroCliente===c?"selected":""}>${c}</option>`).join("")}
+        </select>
+      </div>
+
+      ${facturas.length === 0 ? '<div class="empty-state">No hay facturas pendientes con ese filtro</div>' : `
+      <div class="table-header" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
+        <span>Cliente / Factura</span><span>Ruta</span><span>Fecha</span><span>Saldo</span><span>Días mora</span>
+      </div>
+      ${facturas.map((f,i) => `
+        <div class="table-row" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
+          <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A8EA0">${f.factura||"—"}</span></span>
+          <span class="row-c" style="font-size:11px">${f.ruta}</span>
+          <span class="row-c" style="font-size:11px">${f.fecha||"—"}</span>
+          <span class="row-r" style="color:#D85A30;white-space:nowrap">${fmt(f.saldo)}</span>
+          <span class="row-r" style="font-weight:600;color:${diasColor(f.dias)}">${f.dias}</span>
+        </div>`).join("")}
+      `}
+    </div>`;
+}
+
+cargarDatos();
+</script>
+</body>
+</html>
