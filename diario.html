@@ -39,9 +39,12 @@ tfoot td:first-child { color: #fff; }
 </head>
 <body>
 
-<div class="header">
-  <div class="header-title">Boreal S.A.S.</div>
-  <div class="header-sub" id="headerSub">Recaudo diario — Cargando...</div>
+<div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+  <div>
+    <div class="header-title">Boreal S.A.S.</div>
+    <div class="header-sub" id="headerSub">Recaudo diario — Cargando...</div>
+  </div>
+  <button class="refresh-btn" onclick="cargarDatos()" style="margin-top:0">↻ Actualizar</button>
 </div>
 
 <div class="content" id="content">
