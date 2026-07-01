@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boreal S.A.S. — Panel Gerencia</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #F0EDE8; font-family: 'Inter','Segoe UI',sans-serif; color: #2D2A26; min-height: 100vh; }
+.header { background: #3D3A35; border-bottom: 1px solid #2A2825; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.header-title { font-size: 16px; font-weight: 700; color: #F5F2ED; }
+.header-sub { font-size: 11px; color: #B0A89E; margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.asesor-bar { background: #E8E4DE; border-bottom: 1px solid #D6D0C8; padding: 10px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.asesor-label { font-size: 11px; color: #7A7570; font-weight: 500; white-space: nowrap; }
+.asesor-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.asesor-btn { background: #FAFAF8; color: #7A7570; border: 1px solid #D6D0C8; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.asesor-btn.active { background: #2D7D4A; color: #fff; border-color: #2D7D4A; font-weight: 600; }
+.asesor-btn:hover:not(.active) { border-color: #2D7D4A; color: #2D2A26; }
+
+.content { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+.kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
+@media(max-width:640px){ .kpis { grid-template-columns: repeat(1,1fr); } }
+.kpi { background: #FAFAF8; border: 0.5px solid #D6D0C8; border-radius: 10px; padding: 14px 12px; }
+.kpi-label { font-size: 10px; color: #7A7570; margin-bottom: 4px; }
+.kpi-value { font-size: 20px; font-weight: 700; color: #2D2A26; line-height: 1.2; }
+.kpi-sub { font-size: 10px; margin-top: 4px; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media(max-width:700px){ .two-col { grid-template-columns: 1fr; } }
+
+.card { background: #FAFAF8; border: 0.5px solid #D6D0C8; border-radius: 12px; padding: 18px 16px; margin-bottom: 16px; }
+.card-title { font-size: 12px; font-weight: 600; color: #4A4540; margin-bottom: 14px; }
+
+.chart-wrap { display: flex; align-items: flex-end; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 75px; }
+.bars-row { display: flex; gap: 3px; align-items: flex-end; justify-content: center; }
+.bar-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.bar-val { font-size: 8px; font-weight: 600; white-space: nowrap; }
+.bar-rect { border-radius: 3px 3px 0 0; transition: height 0.4s; min-height: 3px; width: 22px; }
+.bar-lbl { font-size: 9px; color: #7A7570; margin-top: 5px; text-align: center; }
+.chart-legend { display: flex; gap: 14px; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #7A7570; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+.ranking-item { padding: 8px 10px; border-radius: 8px; margin-bottom: 5px; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
+.ranking-item:hover { border-color: #D6D0C8; }
+.ranking-item.selected { background: #E8F5EE; border-color: #2D7D4A; }
+.ranking-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.rank-bar-bg { height: 4px; background: #D6D0C8; border-radius: 2px; }
+.rank-bar-fill { height: 100%; border-radius: 2px; }
+
+.filters-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters-row select { flex: 1; min-width: 140px; background: #F0EDE8; color: #2D2A26; border: 1px solid #D6D0C8; border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+
+.table-header { display: grid; padding: 6px 10px; border-bottom: 1px solid #D6D0C8; margin-bottom: 4px; }
+.table-header span { font-size: 10px; color: #7A7570; font-weight: 600; }
+.table-row { display: grid; padding: 9px 10px; border-radius: 6px; margin-bottom: 2px; align-items: center; }
+.table-row:nth-child(odd) { background: #F0EDE8; }
+.row-c { font-size: 12px; color: #2D2A26; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-r { font-size: 12px; text-align: right; }
+.cartera-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 6px; }
+.empty-state { text-align: center; padding: 24px; color: #7A7570; font-size: 13px; }
+
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; gap: 16px; }
+.spinner { width: 36px; height: 36px; border: 3px solid #D6D0C8; border-top-color: #2D7D4A; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #7A7570; }
+.refresh-btn { background: transparent; border: 1px solid #554E47; color: #F5F2ED; border-radius: 6px; padding: 5px 14px; font-size: 11px; cursor: pointer; }
+.refresh-btn:hover { background: #554E47; }
+.error-state { text-align: center; padding: 40px; color: #C0392B; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">Boreal S.A.S. — Gerencia</div>
+    <div class="header-sub" id="headerSub">Cargando...</div>
+  </div>
+  <div class="header-right">
+    <button class="refresh-btn" onclick="cargarDatos()">↻ Actualizar</button>
+  </div>
+</div>
+
+<div class="asesor-bar">
+  <span class="asesor-label">Asesor:</span>
+  <div class="asesor-btns" id="asesorBtns"></div>
+</div>
+
+<div class="content" id="content">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Leyendo datos del Sheet...</div>
+  </div>
+</div>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbyy_q9qqJRUHIHYfkDd0JEV0UtG1WCaNm3YxCqhMs5_gEnGoE0iww6cuyD4aEN2Adhefg/exec";
+
+const fmt   = n => "$" + Math.round(n).toLocaleString("es-CO");
+const fmtM  = n => n>=1000000?"$"+(n/1000000).toFixed(1)+"M":n>=1000?"$"+(n/1000).toFixed(0)+"K":"$"+Math.round(n);
+const pct   = n => n.toFixed(1)+"%";
+const diasColor = d => d>90?"#C0392B":d>30?"#B8860B":"#2D7D4A";
+const MEDALS = ["🥇","🥈","🥉"];
+const CHART_H = 130;
+
+let DATA = null;
+let asesorActivo = "Todos";
+let filtroRuta = "todas";
+let filtroCliente = "todos";
+
+async function cargarDatos() {
+  document.getElementById("content").innerHTML = `
+    <div class="loading"><div class="spinner"></div><div class="loading-text">Leyendo datos...</div></div>`;
+  try {
+    const res  = await fetch(API_URL);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    DATA = json;
+    render();
+  } catch(err) {
+    document.getElementById("content").innerHTML = `
+      <div class="error-state"><p>Error al cargar datos</p>
+      <p style="font-size:11px;color:#7A7570;margin-top:8px">${err.message}</p>
+      <button class="refresh-btn" style="margin-top:16px;color:#2D2A26;border-color:#D6D0C8" onclick="cargarDatos()">Reintentar</button></div>`;
+  }
+}
+
+function setAsesor(a) {
+  asesorActivo = a;
+  filtroRuta = "todas";
+  filtroCliente = "todos";
+  render();
+}
+
+function setFiltroRuta(v)    { filtroRuta = v;    renderCartera(); }
+function setFiltroCliente(v) { filtroCliente = v; renderCartera(); }
+
+function render() {
+  if (!DATA) return;
+  const asesores = Object.keys(DATA.mensual);
+
+  document.getElementById("headerSub").textContent =
+    "Panel de gerencia — " + DATA.mes_label;
+
+  // Botones asesor
+  document.getElementById("asesorBtns").innerHTML =
+    ["Todos", ...asesores].map(a =>
+      `<button class="asesor-btn${a===asesorActivo?" active":""}" onclick="setAsesor('${a}')">${a}</button>`
+    ).join("");
+
+  // Calcular métricas según selección
+  const lista = asesorActivo === "Todos" ? asesores : [asesorActivo];
+
+  const ventas_total  = lista.reduce((s,a) => s + (DATA.mensual[a]?.ventas||0), 0);
+  const abonos_total  = lista.reduce((s,a) => s + (DATA.mensual[a]?.abonos||0), 0);
+  const cartera_total = lista.reduce((s,a) => s + (DATA.mensual[a]?.cartera_total||0), 0);
+  const efic = ventas_total ? abonos_total/ventas_total*100 : 0;
+  const efC  = efic>=70?"#2D7D4A":efic>=50?"#B8860B":"#C0392B";
+
+  // Tendencia: sumar por mes
+  const tendencia = [];
+  if (DATA.mensual[lista[0]]?.tendencia) {
+    DATA.mensual[lista[0]].tendencia.forEach((t, i) => {
+      tendencia.push({
+        mes:    t.mes,
+        ventas: lista.reduce((s,a) => s+(DATA.mensual[a]?.tendencia?.[i]?.ventas||0),0),
+        abonos: lista.reduce((s,a) => s+(DATA.mensual[a]?.tendencia?.[i]?.abonos||0),0),
+      });
+    });
+  }
+
+  // Cartera consolidada
+  const carteraAll = lista.flatMap(a => (DATA.mensual[a]?.cartera||[]).map(c=>({...c, asesor:a})));
+  const rutas    = [...new Set(carteraAll.map(c=>c.ruta||"Sin ruta"))].sort();
+  const clientes = [...new Set(carteraAll.map(c=>c.cliente))].sort();
+
+  // Ranking mensual
+  const rankingMensual = Object.entries(DATA.mensual)
+    .map(([a,d]) => ({a, ventas:d.ventas}))
+    .sort((x,y) => y.ventas-x.ventas);
+  const maxV = rankingMensual[0]?.ventas || 1;
+
+  document.getElementById("content").innerHTML = `
+    <div class="kpis">
+      <div class="kpi">
+        <div class="kpi-label">Ventas ${asesorActivo==="Todos"?"equipo":asesorActivo} — ${DATA.mes_label}</div>
+        <div class="kpi-value">${fmt(ventas_total)}</div>
+        <div class="kpi-sub" style="color:#7A7570">${lista.length} asesor${lista.length>1?"es":""}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Recaudo ${DATA.mes_label}</div>
+        <div class="kpi-value">${fmt(abonos_total)}</div>
+        <div class="kpi-sub" style="color:${efC}">${pct(efic)} de eficiencia</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Cartera activa total</div>
+        <div class="kpi-value">${fmt(cartera_total)}</div>
+        <div class="kpi-sub" style="color:#C0392B">${carteraAll.length} clientes con saldo</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Tendencia ${DATA.mes_label.split(" ")[1]} — Ventas vs Recaudo</div>
+        <div class="chart-wrap" id="chartTend"></div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#2D7D4A"></div>Ventas</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#B8860B"></div>Recaudo</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Ranking del equipo — ${DATA.mes_label}</div>
+        <div id="rankingDiv"></div>
+      </div>
+    </div>
+
+    <div class="card" id="carteraCard"></div>`;
+
+  // Pintar gráfica
+  const maxT = Math.max(...tendencia.map(t=>Math.max(t.ventas,t.abonos)),1);
+  document.getElementById("chartTend").innerHTML = tendencia.map((t,i) => {
+    const last = i===tendencia.length-1;
+    const hV = Math.max(4,Math.round((t.ventas/maxT)*CHART_H));
+    const hA = Math.max(4,Math.round((t.abonos/maxT)*CHART_H));
+    return `<div class="bar-group" style="opacity:${last?1:0.65}">
+      <div class="bars-row">
+        <div class="bar-col">
+          <span class="bar-val" style="color:#2D7D4A">${fmtM(t.ventas)}</span>
+          <div class="bar-rect" style="height:${hV}px;background:${last?"#2D7D4A":"#7AB896"}"></div>
+        </div>
+        <div class="bar-col">
+          <span class="bar-val" style="color:#8B6914">${fmtM(t.abonos)}</span>
+          <div class="bar-rect" style="height:${hA}px;background:${last?"#B8860B":"#D4A843"}"></div>
+        </div>
+      </div>
+      <div class="bar-lbl" style="${last?"color:#2D7D4A;font-weight:600":""}">${t.mes}${last?" ◀":""}</div>
+    </div>`;
+  }).join("");
+
+  // Ranking
+  document.getElementById("rankingDiv").innerHTML = rankingMensual.map(({a,ventas},i) => {
+    const sel = a===asesorActivo;
+    const w = Math.round((ventas/maxV)*100);
+    return `<div class="ranking-item${sel?" selected":""}" onclick="setAsesor('${a}')">
+      <div class="ranking-row">
+        <span style="font-size:15px;width:22px">${MEDALS[i]||`${i+1}.`}</span>
+        <span style="font-size:13px;flex:1;color:${sel?"#2D7D4A":"#2D2A26"};font-weight:${sel?600:400}">${a}</span>
+        <span style="font-size:13px;font-weight:600;color:${sel?"#2D7D4A":"#2D2A26"}">${fmt(ventas)}</span>
+      </div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:${w}%;background:${sel?"#2D7D4A":"#B0A89E"}"></div></div>
+    </div>`;
+  }).join("");
+
+  // Guardar datos de cartera para filtros
+  window._carteraAll   = carteraAll;
+  window._rutasAll     = rutas;
+  window._clientesAll  = clientes;
+  renderCartera();
+}
+
+function renderCartera() {
+  let facturas = (window._carteraAll || []);
+  if (filtroRuta !== "todas")    facturas = facturas.filter(f => (f.ruta||"Sin ruta")===filtroRuta);
+  if (filtroCliente !== "todos") facturas = facturas.filter(f => f.cliente===filtroCliente);
+  const total = facturas.reduce((s,f)=>s+f.saldo,0);
+
+  const showAsesor = asesorActivo === "Todos";
+
+  document.getElementById("carteraCard").innerHTML = `
+    <div class="cartera-header">
+      <div class="card-title" style="margin-bottom:0;color:#C0392B">Pendiente de cobro</div>
+      <div style="font-size:11px;color:#C0392B">${facturas.length} facturas · Total: ${fmt(total)}</div>
+    </div>
+    <div class="filters-row">
+      <select onchange="setFiltroRuta(this.value)">
+        <option value="todas">Ruta: todas</option>
+        ${(window._rutasAll||[]).map(r=>`<option value="${r}" ${filtroRuta===r?"selected":""}>${r}</option>`).join("")}
+      </select>
+      <select onchange="setFiltroCliente(this.value)">
+        <option value="todos">Cliente: todos</option>
+        ${(window._clientesAll||[]).map(c=>`<option value="${c}" ${filtroCliente===c?"selected":""}>${c}</option>`).join("")}
+      </select>
+    </div>
+    ${facturas.length===0?'<div class="empty-state">No hay facturas con ese filtro</div>':`
+    <div class="table-header" style="grid-template-columns:${showAsesor?"1.2fr 0.6fr 0.6fr 0.6fr 1fr 0.7fr":"1.4fr 0.7fr 0.7fr 1.1fr 0.7fr"}">
+      <span>Cliente / Factura</span>
+      ${showAsesor?'<span>Asesor</span>':''}
+      <span>Ruta</span><span>Fecha</span><span>Saldo</span><span>Días mora</span>
+    </div>
+    ${facturas.map((f,i)=>`
+      <div class="table-row" style="grid-template-columns:${showAsesor?"1.2fr 0.6fr 0.6fr 0.6fr 1fr 0.7fr":"1.4fr 0.7fr 0.7fr 1.1fr 0.7fr"}">
+        <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A7570">${(f.detalleFacturas?.[0]?.factura)||"—"}</span></span>
+        ${showAsesor?`<span class="row-c" style="font-size:11px;color:#2D7D4A;font-weight:500">${f.asesor}</span>`:''}
+        <span class="row-c" style="font-size:11px">${f.ruta||"Sin ruta"}</span>
+        <span class="row-c" style="font-size:11px">${f.detalleFacturas?.[0]?.fecha||"—"}</span>
+        <span class="row-r" style="color:#C0392B;white-space:nowrap">${fmt(f.saldo)}</span>
+        <span class="row-r" style="font-weight:600;color:${diasColor(f.dias)}">${f.dias}</span>
+      </div>`).join("")}
+    `}`;
+}
+
+cargarDatos();
+</script>
+</body>
+</html>
