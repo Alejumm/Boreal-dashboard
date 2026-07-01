@@ -104,6 +104,10 @@ body { background: #0F1923; font-family: 'Inter','Segoe UI',sans-serif; color: #
 <script>
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 const API_URL = "https://script.google.com/macros/s/AKfycbyy_q9qqJRUHIHYfkDd0JEV0UtG1WCaNm3YxCqhMs5_gEnGoE0iww6cuyD4aEN2Adhefg/exec";
+const API_VERSION = "v13"
+
+// Y en la función cargarDatos(), cambia la URL así:
+const url = `${API_URL}?tipo=asesor&id=${encodeURIComponent(ID_ASESOR)}&clave=${encodeURIComponent(CLAVE)}&v=${API_VERSION}`;
 
 const fmt  = n => "$" + Math.round(n).toLocaleString("es-CO");
 const fmtM = n => n>=1000000 ? "$"+(n/1000000).toFixed(1)+"M" : n>=1000 ? "$"+(n/1000).toFixed(0)+"K" : "$"+Math.round(n);
