@@ -262,10 +262,23 @@ function render() {
 }
 
 function renderCartera() {
-  let facturas = (window._carteraAll || []);
-  if (filtroRuta !== "todas")    facturas = facturas.filter(f => (f.ruta||"Sin ruta")===filtroRuta);
-  if (filtroCliente !== "todos") facturas = facturas.filter(f => f.cliente===filtroCliente);
-  const total = facturas.reduce((s,f)=>s+f.saldo,0);
+  // Expandir a nivel de factura individual usando detalleFacturas
+  let facturas = (window._carteraAll || []).flatMap(c =>
+    (c.detalleFacturas || []).map(f => ({
+      cliente:  c.cliente,
+      asesor:   c.asesor,
+      factura:  f.factura,
+      fecha:    f.fecha,
+      saldo:    f.saldo,
+      dias:     f.dias,
+      ruta:     f.ruta || c.ruta || "Sin ruta",
+      estado:   f.estado,
+    }))
+  ).sort((a,b) => b.saldo - a.saldo);
+
+  if (filtroRuta !== "todas")    facturas = facturas.filter(f => f.ruta === filtroRuta);
+  if (filtroCliente !== "todos") facturas = facturas.filter(f => f.cliente === filtroCliente);
+  const total = facturas.reduce((s,f) => s+f.saldo, 0);
 
   const showAsesor = asesorActivo === "Todos";
 
@@ -290,12 +303,12 @@ function renderCartera() {
       ${showAsesor?'<span>Asesor</span>':''}
       <span>Ruta</span><span>Fecha</span><span>Saldo</span><span>Días mora</span>
     </div>
-    ${facturas.map((f,i)=>`
+    ${facturas.map(f=>`
       <div class="table-row" style="grid-template-columns:${showAsesor?"1.2fr 0.6fr 0.6fr 0.6fr 1fr 0.7fr":"1.4fr 0.7fr 0.7fr 1.1fr 0.7fr"}">
-        <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A7570">${(f.detalleFacturas?.[0]?.factura)||"—"}</span></span>
+        <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A7570">${f.factura||"—"}</span></span>
         ${showAsesor?`<span class="row-c" style="font-size:11px;color:#2D7D4A;font-weight:500">${f.asesor}</span>`:''}
-        <span class="row-c" style="font-size:11px">${f.ruta||"Sin ruta"}</span>
-        <span class="row-c" style="font-size:11px">${f.detalleFacturas?.[0]?.fecha||"—"}</span>
+        <span class="row-c" style="font-size:11px">${f.ruta}</span>
+        <span class="row-c" style="font-size:11px">${f.fecha||"—"}</span>
         <span class="row-r" style="color:#C0392B;white-space:nowrap">${fmt(f.saldo)}</span>
         <span class="row-r" style="font-weight:600;color:${diasColor(f.dias)}">${f.dias}</span>
       </div>`).join("")}
