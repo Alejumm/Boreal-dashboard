@@ -157,6 +157,7 @@ function render() {
   const ventas_total  = lista.reduce((s,a) => s + (DATA.mensual[a]?.ventas||0), 0);
   const abonos_total  = lista.reduce((s,a) => s + (DATA.mensual[a]?.abonos||0), 0);
   const cartera_total = lista.reduce((s,a) => s + (DATA.mensual[a]?.cartera_total||0), 0);
+  const comision_total = lista.reduce((s,a) => s + (DATA.mensual[a]?.comision||0), 0);
   const efic = ventas_total ? abonos_total/ventas_total*100 : 0;
   const efC  = efic>=70?"#2D7D4A":efic>=50?"#B8860B":"#C0392B";
 
@@ -199,6 +200,11 @@ function render() {
         <div class="kpi-label">Cartera activa total</div>
         <div class="kpi-value">${fmt(cartera_total)}</div>
         <div class="kpi-sub" style="color:#C0392B">${carteraAll.length} clientes con saldo</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Comisión ${DATA.mes_label}</div>
+        <div class="kpi-value" style="color:#8B6914">${fmt(comision_total)}</div>
+        <div class="kpi-sub" style="color:#7A7570">${lista.length} asesor${lista.length>1?"es":""}</div>
       </div>
     </div>
 
