@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cartera por Antigüedad — Boreal S.A.S.</title>
+<style>
+  :root {
+    --bg:#F0EDE8; --header:#3D3A35; --card:#FAFAF8;
+    --green:#2D7D4A; --green-bg:#E7F1EA;
+    --amber:#B8860B; --amber-bg:#F5EEDD;
+    --red:#C0392B; --red-bg:#F5E4E1;
+    --text:#3D3A35; --muted:#85807A; --border:#E3DED6;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; }
+  header { background:var(--header); color:#FAFAF8; padding:24px 32px; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px; }
+  header h1 { margin:0 0 4px 0; font-size:20px; font-weight:600; }
+  header p { margin:0; color:#C9C4BC; font-size:13px; }
+  .header-meta { text-align:right; font-size:12.5px; color:#C9C4BC; }
+  .header-meta strong { color:#FAFAF8; }
+  main { max-width:1180px; margin:0 auto; padding:28px 32px 56px; }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+  .kpi { background:var(--card); border-radius:14px; padding:18px 20px; border:1px solid var(--border); }
+  .kpi .label { font-size:12px; color:var(--muted); margin-bottom:8px; }
+  .kpi .value { font-size:24px; font-weight:650; }
+  .kpi .sub { font-size:12px; color:var(--muted); margin-top:4px; }
+  .kpi.risk .value { color:var(--red); }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap:12px; flex-wrap:wrap; }
+  .toolbar-note { font-size:12px; color:var(--muted); }
+  #btnActualizar { font-family:inherit; font-size:13.5px; font-weight:600; padding:9px 16px; border-radius:9px; border:1px solid var(--header); background:var(--header); color:#FAFAF8; cursor:pointer; }
+  #btnActualizar:disabled { opacity:0.6; cursor:default; }
+  .bucket { background:var(--card); border-radius:14px; border:1px solid var(--border); margin-bottom:16px; overflow:hidden; }
+  .bucket-head { display:flex; justify-content:space-between; align-items:center; padding:15px 20px; cursor:pointer; user-select:none; }
+  .bucket-head-left { display:flex; align-items:center; gap:12px; }
+  .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .dot.green{background:var(--green)} .dot.amber{background:var(--amber)} .dot.red{background:var(--red)} .dot.dark-red{background:#7A1F16}
+  .bucket-title { font-size:14.5px; font-weight:600; }
+  .bucket-count { font-size:12px; color:var(--muted); font-weight:400; }
+  .bucket-total { font-size:15px; font-weight:650; }
+  .chevron { font-size:12px; color:var(--muted); margin-left:14px; transition:transform .15s; }
+  .bucket.collapsed .chevron { transform:rotate(-90deg); }
+  .bucket.collapsed .bucket-body { display:none; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { text-align:left; font-size:11px; color:var(--muted); font-weight:600; padding:9px 20px; border-top:1px solid var(--border); background:#F5F3EF; }
+  tbody tr.client-row { cursor:pointer; border-top:1px solid var(--border); }
+  tbody tr.client-row:hover { background:#F6F4F0; }
+  tbody td { padding:12px 20px; font-size:13px; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.center { text-align:center; }
+  .client-name { font-weight:600; }
+  .advisor { color:var(--muted); font-size:11.5px; margin-top:2px; }
+  .badge { display:inline-block; font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; }
+  .badge.green{background:var(--green-bg);color:var(--green)} .badge.amber{background:var(--amber-bg);color:var(--amber)}
+  .badge.red{background:var(--red-bg);color:var(--red)} .badge.dark-red{background:#F0DBD7;color:#7A1F16}
+  .invoices-row td { padding:0; background:#F5F3EF; }
+  .invoices-row.hidden { display:none; }
+  .invoices-wrap { padding:6px 20px 14px 48px; }
+  .invoices-wrap table { background:transparent; }
+  .invoices-wrap thead th { background:transparent; font-size:10.5px; padding:6px 12px; }
+  .invoices-wrap tbody td { padding:7px 12px; font-size:12px; border-top:1px solid var(--border); }
+  .caret { display:inline-block; width:14px; color:var(--muted); font-size:11px; }
+  .empty-state, .error-state { text-align:center; padding:40px; color:var(--muted); font-size:13.5px; }
+  .error-state { color:var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Cartera por antigüedad — Boreal S.A.S.</h1>
+    <p>Cuentas por cobrar agrupadas por días de mora, con facturas asociadas</p>
+  </div>
+  <div class="header-meta">Última actualización: <strong id="fechaCorte">—</strong></div>
+</header>
+
+<main>
+  <div class="kpis" id="kpis">
+    <div class="kpi"><div class="label">Clientes con cartera</div><div class="value" id="kpiClientes">—</div></div>
+    <div class="kpi"><div class="label">0–30 días</div><div class="value" id="kpi0_30">—</div><div class="sub" id="kpi0_30n"></div></div>
+    <div class="kpi"><div class="label">31–90 días</div><div class="value" id="kpi31_90">—</div><div class="sub" id="kpi31_90n"></div></div>
+    <div class="kpi risk"><div class="label">+90 días (crítica)</div><div class="value" id="kpi90">—</div><div class="sub" id="kpi90n"></div></div>
+  </div>
+
+  <div class="toolbar">
+    <button id="btnActualizar" onclick="cargarDatos()">Actualizar</button>
+    <div class="toolbar-note">Clic en un cliente para ver sus facturas</div>
+  </div>
+
+  <div id="buckets"><div class="empty-state">Cargando…</div></div>
+</main>
+
+<script>
+  // TODO: reemplazar por la URL real de tu Web App (la misma que usan asesor.html / gerente.html)
+  const WEB_APP_URL = "https://script.google.com/macros/s/TU_DEPLOYMENT_ID/exec";
+
+  const RANGOS = [
+    { key:'0-30',  titulo:'0–30 días',  dot:'green' },
+    { key:'31-60', titulo:'31–60 días', dot:'amber' },
+    { key:'61-90', titulo:'61–90 días', dot:'red' },
+    { key:'+90',   titulo:'+90 días',   dot:'dark-red' }
+  ];
+
+  function formatoCOP(v) { return '$' + Math.round(v).toLocaleString('es-CO'); }
+
+  function cargarDatos() {
+    const btn = document.getElementById('btnActualizar');
+    btn.disabled = true;
+    btn.textContent = 'Actualizando…';
+
+    fetch(WEB_APP_URL + '?tipo=cartera_antiguedad')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        pintar(data);
+      })
+      .catch(err => {
+        document.getElementById('buckets').innerHTML =
+          '<div class="error-state">No se pudo cargar la cartera: ' + err.message + '</div>';
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Actualizar';
+      });
+  }
+
+  function pintar(data) {
+    const k = data.kpis;
+    document.getElementById('fechaCorte').textContent = data.fechaCorte;
+    document.getElementById('kpiClientes').textContent = k.clientesConCartera;
+    document.getElementById('kpi0_30').textContent = formatoCOP(k.b0_30_total);
+    document.getElementById('kpi0_30n').textContent = k.b0_30_n + ' clientes';
+    document.getElementById('kpi31_90').textContent = formatoCOP(k.b31_90_total);
+    document.getElementById('kpi31_90n').textContent = k.b31_90_n + ' clientes';
+    document.getElementById('kpi90').textContent = formatoCOP(k.b90_total);
+    document.getElementById('kpi90n').textContent = k.b90_n + ' clientes · revisar antes de dar promoción';
+
+    const cont = document.getElementById('buckets');
+    cont.innerHTML = '';
+
+    if (!data.clients.length) {
+      cont.innerHTML = '<div class="empty-state">No hay cartera pendiente registrada en este momento.</div>';
+      return;
+    }
+
+    RANGOS.forEach(r => {
+      const clientes = data.clients.filter(c => c.rango === r.key);
+      if (!clientes.length) return;
+      cont.appendChild(construirBucket(r, clientes));
+    });
+  }
+
+  function construirBucket(r, clientes) {
+    const total = clientes.reduce((s, c) => s + c.saldo, 0);
+
+    const bucket = document.createElement('div');
+    bucket.className = 'bucket';
+
+    const head = document.createElement('div');
+    head.className = 'bucket-head';
+    head.onclick = () => bucket.classList.toggle('collapsed');
+    head.innerHTML =
+      '<div class="bucket-head-left">' +
+        '<span class="dot ' + r.dot + '"></span>' +
+        '<span class="bucket-title">' + r.titulo + ' <span class="bucket-count">· ' + clientes.length + ' clientes</span></span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;">' +
+        '<span class="bucket-total">' + formatoCOP(total) + '</span>' +
+        '<span class="chevron">▾</span>' +
+      '</div>';
+    bucket.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'bucket-body';
+    const table = document.createElement('table');
+    table.innerHTML =
+      '<thead><tr><th></th><th>Cliente</th><th>Asesor</th><th class="center"># Facturas</th>' +
+      '<th class="num">Total adeudado</th><th class="center">Días máx.</th><th>Sugerencia</th></tr></thead>';
+
+    const tbody = document.createElement('tbody');
+    clientes.forEach(c => {
+      const row = document.createElement('tr');
+      row.className = 'client-row';
+      row.innerHTML =
+        '<td class="caret">▸</td>' +
+        '<td><div class="client-name">' + c.cliente + '</div></td>' +
+        '<td class="advisor">' + (c.asesor || '—') + '</td>' +
+        '<td class="center">' + c.facturas.length + '</td>' +
+        '<td class="num">' + formatoCOP(c.saldo) + '</td>' +
+        '<td class="center">' + c.diasMax + '</td>' +
+        '<td><span class="badge ' + c.sugerencia.clase + '">' + c.sugerencia.texto + '</span></td>';
+
+      const invRow = document.createElement('tr');
+      invRow.className = 'invoices-row hidden';
+      const invTd = document.createElement('td');
+      invTd.colSpan = 7;
+      const wrap = document.createElement('div');
+      wrap.className = 'invoices-wrap';
+      const invTable = document.createElement('table');
+      const invBody = c.facturas.map(f =>
+        '<tr><td>' + f.numero + '</td><td>' + f.fecha + '</td>' +
+        '<td class="num">' + formatoCOP(f.valor) + '</td><td class="center">' + f.dias + '</td>' +
+        '<td>' + f.estado + '</td></tr>'
+      ).join('');
+      invTable.innerHTML =
+        '<thead><tr><th>Factura</th><th>Fecha</th><th class="num">Saldo</th><th class="center">Días</th><th>Estado</th></tr></thead>' +
+        '<tbody>' + invBody + '</tbody>';
+      wrap.appendChild(invTable);
+      invTd.appendChild(wrap);
+      invRow.appendChild(invTd);
+
+      row.onclick = () => {
+        invRow.classList.toggle('hidden');
+        row.querySelector('.caret').textContent = invRow.classList.contains('hidden') ? '▸' : '▾';
+      };
+
+      tbody.appendChild(row);
+      tbody.appendChild(invRow);
+    });
+
+    table.appendChild(tbody);
+    body.appendChild(table);
+    bucket.appendChild(body);
+    return bucket;
+  }
+
+  cargarDatos();
+</script>
+
+</body>
+</html>
