@@ -27,6 +27,11 @@
   .kpi .sub { font-size:12px; color:var(--muted); margin-top:4px; }
   .kpi.risk .value { color:var(--red); }
   .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap:12px; flex-wrap:wrap; }
+  .toolbar-left { display:flex; gap:10px; flex-wrap:wrap; }
+  .toolbar-left select, .toolbar-left input {
+    font-family:inherit; font-size:13px; padding:9px 12px; border-radius:9px;
+    border:1px solid var(--border); background:var(--card); color:var(--text);
+  }
   .toolbar-note { font-size:12px; color:var(--muted); }
   #btnActualizar { font-family:inherit; font-size:13.5px; font-weight:600; padding:9px 16px; border-radius:9px; border:1px solid var(--header); background:var(--header); color:#FAFAF8; cursor:pointer; }
   #btnActualizar:disabled { opacity:0.6; cursor:default; }
@@ -83,7 +88,18 @@
   </div>
 
   <div class="toolbar">
-    <button id="btnActualizar" onclick="cargarDatos()">Actualizar</button>
+    <div class="toolbar-left">
+      <button id="btnActualizar" onclick="cargarDatos()">Actualizar</button>
+      <select id="filtroAsesor" onchange="aplicarFiltros()"><option value="">Todos los asesores</option></select>
+      <select id="filtroRango" onchange="aplicarFiltros()">
+        <option value="">Todos los rangos</option>
+        <option value="0-30">0–30 días</option>
+        <option value="31-60">31–60 días</option>
+        <option value="61-90">61–90 días</option>
+        <option value="+90">+90 días</option>
+      </select>
+      <input type="text" id="filtroCliente" placeholder="Buscar cliente…" oninput="aplicarFiltros()">
+    </div>
     <div class="toolbar-note">Clic en un cliente para ver sus facturas</div>
   </div>
 
@@ -103,6 +119,8 @@
 
   function formatoCOP(v) { return '$' + Math.round(v).toLocaleString('es-CO'); }
 
+  let datosActuales = null; // { kpis, clients } — cache de la última carga
+
   function cargarDatos() {
     const btn = document.getElementById('btnActualizar');
     btn.disabled = true;
@@ -112,7 +130,13 @@
       .then(r => r.json())
       .then(data => {
         if (data.error) throw new Error(data.error);
-        pintar(data);
+        if (!data.kpis || !Array.isArray(data.clients)) {
+          throw new Error('Respuesta con forma inesperada — ¿se redesplegó la última versión del Web App? ' +
+            'Claves recibidas: ' + Object.keys(data).join(', '));
+        }
+        datosActuales = data;
+        poblarFiltroAsesor(data.clients);
+        aplicarFiltros();
       })
       .catch(err => {
         document.getElementById('buckets').innerHTML =
@@ -124,9 +148,17 @@
       });
   }
 
-  function pintar(data) {
-    const k = data.kpis;
-    document.getElementById('fechaCorte').textContent = data.fechaCorte;
+  function poblarFiltroAsesor(clients) {
+    const select = document.getElementById('filtroAsesor');
+    const actual = select.value; // conservar selección si sigue existiendo
+    const asesores = [...new Set(clients.map(c => c.asesor).filter(Boolean))].sort();
+    select.innerHTML = '<option value="">Todos los asesores</option>' +
+      asesores.map(a => '<option value="' + a + '">' + a + '</option>').join('');
+    if (asesores.includes(actual)) select.value = actual;
+  }
+
+  function pintarKpis(k, fechaCorte) {
+    document.getElementById('fechaCorte').textContent = fechaCorte;
     document.getElementById('kpiClientes').textContent = k.clientesConCartera;
     document.getElementById('kpi0_30').textContent = formatoCOP(k.b0_30_total);
     document.getElementById('kpi0_30n').textContent = k.b0_30_n + ' clientes';
@@ -134,19 +166,54 @@
     document.getElementById('kpi31_90n').textContent = k.b31_90_n + ' clientes';
     document.getElementById('kpi90').textContent = formatoCOP(k.b90_total);
     document.getElementById('kpi90n').textContent = k.b90_n + ' clientes · revisar antes de dar promoción';
+  }
 
+  function aplicarFiltros() {
+    if (!datosActuales) return;
+
+    const asesor = document.getElementById('filtroAsesor').value;
+    const rango = document.getElementById('filtroRango').value;
+    const texto = document.getElementById('filtroCliente').value.trim().toLowerCase();
+
+    const filtrados = datosActuales.clients.filter(c => {
+      if (asesor && c.asesor !== asesor) return false;
+      if (rango && c.rango !== rango) return false;
+      if (texto && !c.cliente.toLowerCase().includes(texto)) return false;
+      return true;
+    });
+
+    pintarKpis(calcularKpisLocal(filtrados), datosActuales.fechaCorte);
+    pintarBuckets(filtrados);
+  }
+
+  function calcularKpisLocal(clients) {
+    const sum = arr => arr.reduce((s, c) => s + c.saldo, 0);
+    const enRango = key => clients.filter(c => c.rango === key);
+    const b0_30 = enRango('0-30');
+    const b31 = enRango('31-60');
+    const b61 = enRango('61-90');
+    const b90 = enRango('+90');
+    return {
+      clientesConCartera: clients.length,
+      b0_30_total: sum(b0_30), b0_30_n: b0_30.length,
+      b31_90_total: sum(b31) + sum(b61), b31_90_n: b31.length + b61.length,
+      b90_total: sum(b90), b90_n: b90.length
+    };
+  }
+
+  function pintarBuckets(clients) {
     const cont = document.getElementById('buckets');
     cont.innerHTML = '';
 
-    if (!data.clients.length) {
-      cont.innerHTML = '<div class="empty-state">No hay cartera pendiente registrada en este momento.</div>';
+    if (!clients.length) {
+      cont.innerHTML = '<div class="empty-state">Ningún cliente coincide con los filtros aplicados.</div>';
       return;
     }
 
     RANGOS.forEach(r => {
-      const clientes = data.clients.filter(c => c.rango === r.key);
-      if (!clientes.length) return;
-      cont.appendChild(construirBucket(r, clientes));
+      const clientesRango = clients.filter(c => c.rango === r.key);
+      if (!clientesRango.length) return;
+      cont.appendChild(construirBucket(r, clientesRango));
     });
   }
 
