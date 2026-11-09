@@ -199,6 +199,7 @@
   .modal-fondo{ position:fixed; inset:0; background:rgba(20,25,35,.55); display:none; align-items:center; justify-content:center; z-index:60; padding:16px; }
   .modal-fondo.abierto{ display:flex; }
   .modal-caja{ background:#fff; max-width:600px; width:100%; max-height:90vh; overflow:auto; padding:22px 24px; border-radius:3px; }
+  label > input[type="checkbox"]{ width:auto; flex:none; padding:0; margin:0; }   /* las casillas dentro de una etiqueta no se estiran como un campo de texto */
   .oculto-sf{ display:none !important; }
   .badge-tab{ font-size:11px; opacity:.85; margin-left:4px; }
   .badge-plastico{ background:#E3EEFB; color:#1A4FA3; }
@@ -2618,6 +2619,7 @@ function salirModoEdicion(){
   grupoEdicion = null;
   editandoCredito = false;
   tipoFijoEdicion = null;
+  cValorPagado.disabled = false;
   document.getElementById("c-sinfactura").disabled = false;
   cFacInput.required = true;
   document.getElementById("c-asesor").required = true;
@@ -2695,6 +2697,13 @@ async function editarComprobante(id){
   const totalCmp = document.getElementById("c-valor_total");
   totalCmp.value = fila.valor_total_comprobante ?? fila.valor_pagado ?? "";
   if(parseFloat(totalCmp.value) !== parseFloat(fila.valor_pagado)) totalCmp.dataset.tocado = "1"; else delete totalCmp.dataset.tocado;
+  if(tipoFijoEdicion === "Por aplicar" && parseFloat(totalCmp.value) - parseFloat(fila.valor_pagado) > 0.01){
+    // ya se aplicó una parte a facturas: lo que queda por aplicar no se cambia a mano, para que las filas del comprobante sigan sumando su valor
+    cValorPagado.disabled = true;
+    const mi = document.getElementById("c-msg");
+    mi.textContent = `Este comprobante ya se aplicó en parte (de ${fmtCOP(totalCmp.value)} quedan ${fmtCOP(fila.valor_pagado)} por aplicar): su valor no se cambia aquí. El resto se reparte en la pestaña "Por aplicar".`;
+    mi.className = "msg";
+  }
 
   if(fila.descuento){
     // Solo se guardó el monto final en $, no el % original con que se haya
