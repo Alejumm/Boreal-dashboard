@@ -199,6 +199,8 @@
   .modal-fondo{ position:fixed; inset:0; background:rgba(20,25,35,.55); display:none; align-items:center; justify-content:center; z-index:60; padding:16px; }
   .modal-fondo.abierto{ display:flex; }
   .modal-caja{ background:#fff; max-width:600px; width:100%; max-height:90vh; overflow:auto; padding:22px 24px; border-radius:3px; }
+  .oculto-sf{ display:none !important; }
+  .badge-tab{ font-size:11px; opacity:.85; margin-left:4px; }
   .badge-plastico{ background:#E3EEFB; color:#1A4FA3; }
   .gasto-anulado td{ opacity:.55; }
   .gasto-anulado td:last-child{ opacity:1; }
@@ -283,6 +285,7 @@
   <nav class="tabs">
     <div class="tab active" data-view="ventas">Registrar venta</div>
     <div class="tab" data-view="comprobantes">Registrar comprobante</div>
+    <div class="tab" data-view="poraplicar">Por aplicar<span class="badge-tab" id="pa-badge"></span></div>
     <div class="tab" data-view="cartera">Consultar cartera</div>
     <div class="tab" data-view="clientes">Clientes</div>
     <div class="tab" data-view="proveedores">Proveedores</div>
@@ -469,6 +472,13 @@
         <h2>Nuevo comprobante de pago</h2>
         <form id="form-comprobante">
           <div class="grid">
+            <div class="field full" id="c-sinfactura-wrap" style="padding:10px 12px; border:1px dashed var(--steel-800); border-radius:3px; background:#F6F7F9;">
+              <label style="display:flex; gap:8px; align-items:flex-start; text-transform:none; letter-spacing:0; font-weight:500; margin:0;">
+                <input type="checkbox" id="c-sinfactura" style="margin-top:3px;">
+                <span><strong>Todavía no sé a qué factura(s) va (queda por aplicar)</strong><br>
+                  <span class="hint" style="display:inline;">Registra solo el comprobante recibido. Después lo aplicas a las facturas en la pestaña "Por aplicar", por asesor.</span></span>
+              </label>
+            </div>
             <div class="field full" id="c-grupo-aviso" style="display:none;">
               <div class="hint lookup-warn" id="c-grupo-aviso-txt"></div>
             </div>
@@ -550,7 +560,7 @@
             </div>
 
             <!-- Devolución de producto: se descuenta del saldo de la factura, no cuenta como recaudo -->
-            <div class="field full" style="margin-top:6px;">
+            <div class="field full" id="c-dev-titulo" style="margin-top:6px;">
               <label style="margin-bottom:0;">Devolución de producto (opcional) — se descuenta del saldo de la factura</label>
             </div>
             <div class="field">
@@ -782,6 +792,7 @@
         <button type="button" class="subtab active" data-sec="registrar">Registrar compra y pago</button>
         <button type="button" class="subtab" data-sec="cartera">Resumen y cartera</button>
         <button type="button" class="subtab" data-sec="facturas">Facturas de proveedores</button>
+        <button type="button" class="subtab" data-sec="pagos">Pagos a proveedores</button>
         <button type="button" class="btn-submit" id="prov-nuevo-btn" style="margin-left:auto; padding:8px 16px;">+ Nuevo proveedor</button>
       </div>
 
@@ -954,6 +965,103 @@
         </div>
       </div>
 
+      <div class="panel prov-sec" data-sec="pagos">
+        <h2>Historial de pagos a proveedores</h2>
+        <div class="hint" style="margin-bottom:10px;">Ordenado por fecha de pago, del más reciente al más antiguo.</div>
+        <div class="filters">
+          <div class="field grow"><label>Proveedor o N° de factura</label><input type="text" id="hp-buscar" placeholder="Buscar..."></div>
+          <div class="field"><label>Desde</label><input type="date" id="hp-desde"></div>
+          <div class="field"><label>Hasta</label><input type="date" id="hp-hasta"></div>
+        </div>
+        <div class="totals-strip">
+          <div class="total-card"><div class="label">Pagos</div><div class="value" id="hp-n">0</div></div>
+          <div class="total-card accent"><div class="label">Total pagado</div><div class="value" id="hp-total">$0</div></div>
+        </div>
+        <div class="hint" id="hp-msg" style="margin:6px 0;"></div>
+        <div class="table-wrap">
+          <table id="hp-tabla">
+            <thead><tr><th>Fecha de pago</th><th>Proveedor</th><th>N° factura</th><th class="num">Valor pagado</th><th>Estado</th><th>Observaciones</th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- POR APLICAR ---------- -->
+    <section class="view" id="view-poraplicar">
+      <div class="panel">
+        <h2>Comprobantes por aplicar</h2>
+        <div class="hint" style="margin-bottom:10px;">Plata que ya llegó y todavía no está asignada a una factura, agrupada por asesor. Elige un asesor y reparte su bolsa entre las facturas, en el orden en que te vayan diciendo: el sistema toma siempre el comprobante más antiguo primero.</div>
+        <div class="totals-strip">
+          <div class="total-card accent"><div class="label">Total por aplicar</div><div class="value" id="pa-total">$0</div></div>
+          <div class="total-card"><div class="label">Asesores con saldo</div><div class="value" id="pa-asesores">0</div></div>
+        </div>
+        <div class="hint" id="pa-msg" style="margin:6px 0;"></div>
+        <div class="table-wrap">
+          <table id="pa-tabla">
+            <thead><tr><th>Asesor</th><th class="num">Comprobantes</th><th class="num">Por aplicar</th><th class="num">Más antiguo (días)</th><th></th></tr></thead>
+            <tbody><tr><td colspan="5" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" id="pa-detalle" style="display:none;">
+        <h2 id="pa-titulo">Aplicar comprobantes</h2>
+        <div class="totals-strip">
+          <div class="total-card"><div class="label">Por aplicar</div><div class="value" id="pa-bolsa">$0</div></div>
+          <div class="total-card accent"><div class="label">Aplicando ahora</div><div class="value" id="pa-ahora">$0</div></div>
+          <div class="total-card"><div class="label">Quedarían por aplicar</div><div class="value" id="pa-quedan">$0</div></div>
+        </div>
+        <form id="form-pa">
+          <div class="grid">
+            <div class="field">
+              <label>N° de factura / remisión *</label>
+              <input type="text" id="pa-factura" autocomplete="off" placeholder="Buscar factura...">
+              <div class="hint" id="pa-fac-status"></div>
+            </div>
+            <div class="field">
+              <label>Valor a aplicar ($) *</label>
+              <input type="number" step="0.01" min="0.01" id="pa-valor">
+              <div class="hint">
+                <button type="button" class="btn-submit" id="pa-todo" style="padding:4px 10px; font-size:10.5px; background:var(--steel-800);">Todo lo que hay</button>
+                <button type="button" class="btn-submit" id="pa-saldo" style="padding:4px 10px; font-size:10.5px; background:var(--steel-800);">Saldo de la factura</button>
+              </div>
+            </div>
+          </div>
+          <details class="advanced">
+            <summary>Descuento, impuesto o devolución de esta factura (opcional)</summary>
+            <div class="grid">
+              <div class="field"><label>Descuento ($)</label><input type="number" step="0.01" min="0" id="pa-descuento"></div>
+              <div class="field"><label>Impuesto / retención ($)</label><input type="number" step="0.01" min="0" id="pa-retencion"></div>
+              <div class="field"><label>Valor devuelto ($)</label><input type="number" step="0.01" min="0" id="pa-dev-valor"></div>
+              <div class="field"><label>Referencia de la devolución</label><input type="text" id="pa-dev-ref"></div>
+            </div>
+          </details>
+          <div class="hint" id="pa-resumen" style="margin-top:8px;"></div>
+          <div class="actions-row" style="margin-top:10px;">
+            <button type="submit" class="btn-submit" id="pa-submit">Aplicar a la factura</button>
+            <button type="button" class="btn-submit" id="pa-cerrar" style="background:var(--steel-800);">Cerrar</button>
+          </div>
+        </form>
+
+        <h3 class="dash-sub-h" style="margin-top:18px;">Comprobantes por aplicar (el más antiguo se usa primero)</h3>
+        <div class="table-wrap">
+          <table id="pa-comp-tabla">
+            <thead><tr><th>Fecha</th><th>Banco</th><th>Recibo</th><th class="num">Por aplicar</th><th class="num">Comprobante</th></tr></thead>
+            <tbody><tr><td colspan="5" class="empty-state">—</td></tr></tbody>
+          </table>
+        </div>
+
+        <h3 class="dash-sub-h" style="margin-top:18px;">Facturas abiertas de este asesor</h3>
+        <div class="filters"><div class="field grow"><label>Buscar</label><input type="text" id="pa-buscar" placeholder="Cliente o N° de factura..."></div></div>
+        <div class="hint">Las que tienen el mismo saldo que el valor que estás escribiendo salen marcadas.</div>
+        <div class="table-wrap">
+          <table id="pa-fact-tabla">
+            <thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th class="num">Días</th><th class="num">Saldo</th><th></th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty-state">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- ---------- GASTOS ---------- -->
@@ -1343,8 +1451,8 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v16";
-const ESQUEMA_REQUERIDO = 16;
+const APP_VERSION = "v17";
+const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
   nombre: "Boreal S.A.S.",
@@ -1509,6 +1617,7 @@ function enterApp(session){
   document.getElementById("user-email").textContent = session.user.email;
   verificarEsquema();
   verificarVersionApp();
+  cargarBolsa();
   cargarAsesores();
   cargarCiudadesRuta();
   cargarBancos();
@@ -1549,6 +1658,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     if(tab.dataset.view === "proveedores"){ cargarCarteraProveedores(); cargarListaProveedores(); if(document.querySelector('#prov-subnav .subtab.active').dataset.sec === "facturas") cargarFacturasProv(); }
     if(tab.dataset.view === "ventas") cargarHistorialVentas();
     if(tab.dataset.view === "comprobantes") cargarHistorialComprobantes();
+    if(tab.dataset.view === "poraplicar") cargarBolsa();
     if(tab.dataset.view === "clientes") cargarClientes();
     if(tab.dataset.view === "gastos") cargarHistorialGastos();
     if(tab.dataset.view === "dashboard") cargarDashboard();
@@ -1675,6 +1785,23 @@ const cFacStatus = document.getElementById("c-fac-status");
 const cValorPagado = document.getElementById("c-valor_pagado");
 const cTipoPagoHint = document.getElementById("c-tipo-pago-hint");
 let tFac;
+
+/* Comprobante sin factura ("por aplicar"): se esconden los campos que solo sirven para una factura. */
+const SF_CAMPOS = ["c-n_factura_ref", "c-descuento_tipo", "c-retencion", "c-dev-cantidad", "c-dev-valor", "c-dev-referencia", "c-multi-rows"];
+function modoSinFactura(on){
+  SF_CAMPOS.forEach(id => { const f = document.getElementById(id).closest(".field"); if(f) f.classList.toggle("oculto-sf", on); });
+  ["c-dev-titulo", "c-total-wrap", "c-tipo-pago-hint"].forEach(id => document.getElementById(id).classList.toggle("oculto-sf", on));
+  cFacInput.required = !on && !editandoCredito;
+  document.getElementById("c-cliente").required = !on;
+  if(on){
+    cFacInput.value = ""; delete cFacInput.dataset.saldoPendiente; document.getElementById("c-fac-status").textContent = "";
+    cDescuentoTipo.value = ""; cDescuentoTipo.dispatchEvent(new Event("change"));
+    cRetencion.value = ""; cDevCantidad.value = ""; cDevValor.value = ""; cDevReferencia.value = "";
+    document.getElementById("c-multi-rows").innerHTML = "";
+    actualizarHintTipoPago(); actualizarTotalMulti();
+  }
+}
+document.getElementById("c-sinfactura").addEventListener("change", e => modoSinFactura(e.target.checked));
 
 /* Excedente de cada factura: lo aplicado (pago + descuento + devolución + impuesto) por encima de su saldo; nunca más que el dinero recibido. */
 const r2c = x => Math.round((x + Number.EPSILON) * 100) / 100;
@@ -1892,7 +2019,8 @@ function crearFilaMulti(){
 
 /* Cuando se edita una factura de un pago múltiple: { grupo_id, hermanas, original } con las otras facturas del mismo comprobante. */
 let grupoEdicion = null;
-let editandoCredito = false;   // se está editando una fila "Saldo a favor" (no tiene factura ni asesor)
+let editandoCredito = false;
+let tipoFijoEdicion = null;    // 'Saldo a favor' o 'Por aplicar' mientras se edita una fila sin factura   // se está editando una fila "Saldo a favor" (no tiene factura ni asesor)
 function filasExtra(){ return [...document.querySelectorAll("#c-multi-rows .multi-row")]; }
 
 function actualizarTotalMulti(){
@@ -2249,13 +2377,32 @@ document.getElementById("form-comprobante").addEventListener("submit", async (e)
   const base = {
     fecha_pago,
     nit: document.getElementById("c-nit").value.trim() || null,
-    cliente: document.getElementById("c-cliente").value.trim(),
+    cliente: document.getElementById("c-cliente").value.trim() || (document.getElementById("c-sinfactura").checked ? "POR APLICAR" : ""),
     recibo_caja: document.getElementById("c-recibo_caja").value.trim() || null,
     banco: cBanco.value || null,
     asesor: document.getElementById("c-asesor").value || null,
     pago_plasticos: document.getElementById("c-plasticos").checked,
     mes_comercial: mesDe(fecha_pago),
   };
+
+  // Comprobante recibido sin saber todavía a qué factura va: queda "por aplicar" a nombre del asesor
+  if(document.getElementById("c-sinfactura").checked && !editandoComprobanteId){
+    const valor = parseFloat(cValorPagado.value) || 0;
+    if(!base.asesor){ msg.textContent = "Indica el asesor que envió el comprobante: la bolsa por aplicar se arma por asesor."; msg.classList.add("err"); return; }
+    if(!(valor > 0)){ msg.textContent = "Indica el valor del comprobante."; msg.classList.add("err"); return; }
+    btn.disabled = true; btn.textContent = "Guardando...";
+    const filaPA = { ...base, cliente: base.cliente || "POR APLICAR", n_factura_ref: null, valor_pagado: valor, tipo_pago: "Por aplicar",
+      entregado_por: esBancoEfectivo(cBanco.value) ? (cEntregadoPor.value.trim() || null) : null, valor_total_comprobante: valor, grupo_id: null };
+    const { error: errPA } = await sb.from("comprobantes").insert([filaPA]);
+    btn.disabled = false; btn.textContent = "Guardar comprobante";
+    if(errPA){ msg.textContent = "Error al guardar: " + errPA.message; msg.classList.add("err"); return; }
+    const textoPA = `Comprobante recibido: ${fmtCOP(valor)} por aplicar de ${base.asesor}. Aplícalo a las facturas en la pestaña "Por aplicar".`;
+    cargarHistorialComprobantes();
+    limpiarFormularioComprobante();   // limpia también el mensaje: por eso el mensaje se pone después
+    msg.textContent = textoPA; msg.className = "msg ok";
+    cargarBolsa();
+    return;
+  }
 
   const valorPrincipal = parseFloat(cValorPagado.value) || 0;
   const saldoPrincipal = cFacInput.dataset.saldoPendiente !== undefined ? parseFloat(cFacInput.dataset.saldoPendiente) : null;
@@ -2295,7 +2442,7 @@ document.getElementById("form-comprobante").addEventListener("submit", async (e)
     devolucion_cantidad: devCantidad > 0 ? devCantidad : null,
     devolucion_valor: devValor > 0 ? devValor : null,
     devolucion_referencia: devReferencia || null,
-    tipo_pago: editandoCredito ? "Saldo a favor" : determinarTipoPago(valorPrincipal - movPrincipal + descuentoPrincipal + ajPrincipal + devValor + retValor, saldoPrincipal),
+    tipo_pago: tipoFijoEdicion ? tipoFijoEdicion : determinarTipoPago(valorPrincipal - movPrincipal + descuentoPrincipal + ajPrincipal + devValor + retValor, saldoPrincipal),
     retencion: retValor > 0 ? retValor : null,
     entregado_por: esBancoEfectivo(cBanco.value) ? (cEntregadoPor.value.trim() || null) : null,
     descuento: (cDescuentoTipo.value || ajPrincipal) ? r2c(descuentoPrincipal + ajPrincipal) : null,
@@ -2452,6 +2599,7 @@ function limpiarFormularioComprobante(){
   document.getElementById("c-sf-wrap").style.display = "none";
   document.getElementById("c-excedente-wrap").style.display = "none";
   document.getElementById("c-ajuste-wrap").style.display = "none";
+  modoSinFactura(false);
 }
 document.getElementById("c-limpiar").addEventListener("click", () => {
   if(editandoComprobanteId !== null) salirModoEdicion();
@@ -2469,6 +2617,8 @@ function salirModoEdicion(){
   editandoComprobanteId = null;
   grupoEdicion = null;
   editandoCredito = false;
+  tipoFijoEdicion = null;
+  document.getElementById("c-sinfactura").disabled = false;
   cFacInput.required = true;
   document.getElementById("c-asesor").required = true;
   document.getElementById("c-grupo-aviso").style.display = "none";
@@ -2503,9 +2653,11 @@ async function editarComprobante(id){
   editandoComprobanteId = id;
   limpiarFormularioComprobante();
   entrarModoEdicion();
-  editandoCredito = fila.tipo_pago === "Saldo a favor";
-  cFacInput.required = !editandoCredito;                      // una fila de saldo a favor no tiene factura ni asesor
-  document.getElementById("c-asesor").required = !editandoCredito;
+  tipoFijoEdicion = ["Saldo a favor", "Por aplicar"].includes(fila.tipo_pago) ? fila.tipo_pago : null;
+  editandoCredito = !!tipoFijoEdicion;
+  cFacInput.required = !editandoCredito;                      // una fila de saldo a favor o por aplicar no tiene factura
+  document.getElementById("c-asesor").required = tipoFijoEdicion !== "Saldo a favor";   // el saldo a favor no tiene asesor; el por aplicar sí
+  if(tipoFijoEdicion === "Por aplicar"){ const cb = document.getElementById("c-sinfactura"); cb.checked = true; cb.disabled = true; modoSinFactura(true); }
   grupoEdicion = fila.grupo_id ? {
     grupo_id: fila.grupo_id, hermanas,
     original: {
@@ -3800,6 +3952,7 @@ function mostrarSeccionProv(sec){
   document.querySelectorAll("#prov-subnav .subtab").forEach(b => b.classList.toggle("active", b.dataset.sec === sec));
   document.querySelectorAll("#view-proveedores .prov-sec").forEach(p => p.classList.toggle("activa", p.dataset.sec === sec));
   if(sec === "facturas") cargarFacturasProv();
+  if(sec === "pagos") cargarPagosProv();
   if(sec === "cartera") cargarCarteraProveedores();
 }
 document.querySelectorAll("#prov-subnav .subtab").forEach(b => b.addEventListener("click", () => mostrarSeccionProv(b.dataset.sec)));
@@ -3909,6 +4062,185 @@ document.getElementById("form-factura-prov").addEventListener("submit", async e 
   cargarCarteraProveedores();
   await cargarFacturasProv();   // la recarga reescribe el aviso: por eso el mensaje se pone después
   const fm = document.getElementById("fp-msg"); fm.textContent = `Factura ${r.n_factura} de ${r.proveedor} actualizada.`; fm.className = "hint lookup-ok";
+});
+
+/* ============================================================
+   PAGOS A PROVEEDORES: historial por fecha de pago (del más reciente al más antiguo)
+   ============================================================ */
+let tHp;
+async function cargarPagosProv(){
+  const tb = document.querySelector("#hp-tabla tbody");
+  const texto = (document.getElementById("hp-buscar").value || "").replace(/[,()%*]/g, " ").replace(/\s+/g, " ").trim();
+  const desde = document.getElementById("hp-desde").value, hasta = document.getElementById("hp-hasta").value;
+  let q = sb.from("pagos_proveedores").select("id,fecha_pago,proveedor,n_factura,valor_pagado,estado,observaciones")
+    .order("fecha_pago", { ascending: false }).order("id", { ascending: false }).limit(300);
+  if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
+  if(desde) q = q.gte("fecha_pago", desde);
+  if(hasta) q = q.lte("fecha_pago", hasta);
+  const { data, error } = await q;
+  if(error){ tb.innerHTML = `<tr><td colspan="6" class="empty-state">No se pudo cargar: ${escapar(error.message)}</td></tr>`; return; }
+  const filas = data || [];
+  document.getElementById("hp-n").textContent = filas.length;
+  document.getElementById("hp-total").textContent = fmtCOP(filas.reduce((a, r) => a + (parseFloat(r.valor_pagado) || 0), 0));
+  document.getElementById("hp-msg").textContent = filas.length >= 300 ? "Se muestran los 300 más recientes: refina la búsqueda o las fechas para ver otros." : "";
+  tb.innerHTML = filas.length === 0
+    ? `<tr><td colspan="6" class="empty-state">No hay pagos con esos filtros.</td></tr>`
+    : filas.map(r => `<tr><td>${escapar(r.fecha_pago)}</td><td>${escapar(r.proveedor)}</td><td>${escapar(r.n_factura)}</td>
+        <td class="num">${fmtCOP(r.valor_pagado)}</td><td>${escapar(r.estado || "—")}</td><td>${escapar(r.observaciones || "")}</td></tr>`).join("");
+}
+document.getElementById("hp-buscar").addEventListener("input", () => { clearTimeout(tHp); tHp = setTimeout(cargarPagosProv, 350); });
+["hp-desde", "hp-hasta"].forEach(id => document.getElementById(id).addEventListener("change", cargarPagosProv));
+
+/* ============================================================
+   POR APLICAR: bolsa de comprobantes sin factura, por asesor
+   La función aplicar_comprobante_pendiente (en la base) hace el reparto de una sola vez: toma el comprobante más antiguo primero,
+   parte los comprobantes cuando hace falta y conserva fecha, banco, recibo y validaciones de cada pedazo.
+   ============================================================ */
+let BOLSAS = [], PA_ASESOR = null, PA_BOLSA = 0, PA_FACTURAS = [];
+const diasDesde = f => Math.round((new Date(hoyISO() + "T00:00:00") - new Date(f + "T00:00:00")) / 86400000);
+async function cargarBolsa(){
+  const tb = document.querySelector("#pa-tabla tbody");
+  const { data, error } = await sb.from("por_aplicar_asesor").select("*").order("mas_antiguo");
+  if(error){
+    tb.innerHTML = `<tr><td colspan="5" class="empty-state">No se pudo leer la bolsa: ${escapar(error.message)}</td></tr>`;
+    return;
+  }
+  BOLSAS = data || [];
+  const total = BOLSAS.reduce((a, r) => a + (parseFloat(r.por_aplicar) || 0), 0);
+  document.getElementById("pa-total").textContent = fmtCOP(total);
+  document.getElementById("pa-asesores").textContent = BOLSAS.length;
+  document.getElementById("pa-badge").textContent = BOLSAS.length ? ` · ${fmtCOP(total)}` : "";
+  tb.innerHTML = BOLSAS.length === 0
+    ? `<tr><td colspan="5" class="empty-state">No hay comprobantes por aplicar.</td></tr>`
+    : BOLSAS.map((r, i) => `<tr><td><strong>${escapar(r.asesor)}</strong></td><td class="num">${r.comprobantes}</td>
+        <td class="num"><strong>${fmtCOP(r.por_aplicar)}</strong></td><td class="num">${diasDesde(r.mas_antiguo)}</td>
+        <td><button type="button" class="btn-submit" data-pa="${i}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Aplicar</button></td></tr>`).join("");
+  if(PA_ASESOR) await cargarDetallePA();
+}
+document.querySelector("#pa-tabla tbody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-pa]"); if(!b) return;
+  PA_ASESOR = BOLSAS[parseInt(b.dataset.pa, 10)].asesor;
+  document.getElementById("form-pa").reset(); document.getElementById("pa-fac-status").textContent = ""; delete document.getElementById("pa-factura").dataset.saldo;
+  document.getElementById("pa-msg").textContent = "";
+  cargarDetallePA();
+  document.getElementById("pa-detalle").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("pa-cerrar").addEventListener("click", () => { PA_ASESOR = null; document.getElementById("pa-detalle").style.display = "none"; });
+
+async function cargarDetallePA(){
+  const detalle = document.getElementById("pa-detalle");
+  if(!BOLSAS.some(r => r.asesor === PA_ASESOR)){ detalle.style.display = "none"; PA_ASESOR = null; return; }   // ya no tiene saldo
+  detalle.style.display = "";
+  document.getElementById("pa-titulo").textContent = `Aplicar comprobantes de ${PA_ASESOR}`;
+  const [rc, rf] = await Promise.all([
+    sb.from("comprobantes").select("id,fecha_pago,banco,recibo_caja,valor_pagado,valor_total_comprobante")
+      .eq("asesor", PA_ASESOR).eq("tipo_pago", "Por aplicar").is("n_factura_ref", null).gt("valor_pagado", 0).order("fecha_pago").order("id"),
+    sb.from("cartera").select("n_factura,cliente,fecha_factura,saldo_pendiente,dias_mora").eq("comercial", PA_ASESOR).order("fecha_factura").limit(200),
+  ]);
+  const comps = rc.data || [];
+  PA_BOLSA = comps.reduce((a, r) => a + (parseFloat(r.valor_pagado) || 0), 0);
+  PA_FACTURAS = rf.data || [];
+  document.querySelector("#pa-comp-tabla tbody").innerHTML = comps.length === 0
+    ? `<tr><td colspan="5" class="empty-state">—</td></tr>`
+    : comps.map(r => `<tr><td>${escapar(r.fecha_pago)}</td><td>${escapar(etiquetaBanco(r.banco))}</td><td>${escapar(r.recibo_caja || "—")}</td>
+        <td class="num"><strong>${fmtCOP(r.valor_pagado)}</strong></td><td class="num">${fmtCOP(r.valor_total_comprobante ?? r.valor_pagado)}</td></tr>`).join("");
+  pintarFacturasPA();
+  actualizarResumenPA();
+}
+function pintarFacturasPA(){
+  const texto = (document.getElementById("pa-buscar").value || "").trim().toLowerCase();
+  const valor = parseFloat(document.getElementById("pa-valor").value) || 0;
+  const filas = PA_FACTURAS.filter(f => !texto || `${f.cliente} ${f.n_factura}`.toLowerCase().includes(texto));
+  document.querySelector("#pa-fact-tabla tbody").innerHTML = filas.length === 0
+    ? `<tr><td colspan="6" class="empty-state">No hay facturas abiertas con ese filtro.</td></tr>`
+    : filas.map(f => `<tr${valor > 0 && Math.abs(parseFloat(f.saldo_pendiente) - valor) < 0.5 ? ' style="background:#E8F5EE;"' : ""}>
+        <td>${escapar(f.n_factura)}${valor > 0 && Math.abs(parseFloat(f.saldo_pendiente) - valor) < 0.5 ? ' <span class="badge badge-pag">coincide</span>' : ""}</td>
+        <td>${escapar(f.cliente)}</td><td>${escapar(f.fecha_factura)}</td><td class="num">${f.dias_mora ?? ""}</td><td class="num">${fmtCOP(f.saldo_pendiente)}</td>
+        <td><button type="button" class="btn-submit" data-pa-usar="${escapar(f.n_factura)}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Usar</button></td></tr>`).join("");
+}
+document.getElementById("pa-buscar").addEventListener("input", pintarFacturasPA);
+document.querySelector("#pa-fact-tabla tbody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-pa-usar]"); if(!b) return;
+  const f = PA_FACTURAS.find(x => x.n_factura === b.dataset.paUsar); if(!f) return;
+  const campo = document.getElementById("pa-factura");
+  campo.value = f.n_factura; campo.dataset.saldo = f.saldo_pendiente; campo.dataset.cliente = f.cliente;
+  document.getElementById("pa-fac-status").textContent = `Factura encontrada (${f.n_factura}) · ${f.cliente} · Saldo pendiente: ${fmtCOP(f.saldo_pendiente)}`;
+  document.getElementById("pa-fac-status").className = "hint lookup-ok";
+  document.getElementById("pa-valor").value = r2c(Math.min(PA_BOLSA, parseFloat(f.saldo_pendiente)));
+  actualizarResumenPA();
+});
+
+/* Factura escrita a mano: se busca y se muestra su saldo */
+let tPaFac;
+document.getElementById("pa-factura").addEventListener("input", () => {
+  clearTimeout(tPaFac);
+  tPaFac = setTimeout(async () => {
+    const campo = document.getElementById("pa-factura"), st = document.getElementById("pa-fac-status");
+    const raw = campo.value.trim();
+    delete campo.dataset.saldo; delete campo.dataset.cliente;
+    if(!raw){ st.textContent = ""; actualizarResumenPA(); return; }
+    const data = await buscarVentaPorFactura(raw);
+    if(data){
+      campo.value = data.n_factura; campo.dataset.saldo = data.saldo_pendiente; campo.dataset.cliente = data.cliente || "";
+      st.textContent = `Factura encontrada (${data.n_factura}) · ${data.cliente || ""} · Saldo pendiente: ${fmtCOP(data.saldo_pendiente)}`; st.className = "hint lookup-ok";
+    } else {
+      st.textContent = "No se encontró esa factura."; st.className = "hint lookup-warn";
+    }
+    actualizarResumenPA();
+  }, 450);
+});
+const paNum = id => parseFloat(document.getElementById(id).value) || 0;
+function actualizarResumenPA(){
+  const valor = paNum("pa-valor"), extra = paNum("pa-descuento") + paNum("pa-retencion") + paNum("pa-dev-valor");
+  const saldoTxt = document.getElementById("pa-factura").dataset.saldo;
+  const saldo = saldoTxt !== undefined ? parseFloat(saldoTxt) : null;
+  document.getElementById("pa-bolsa").textContent = fmtCOP(PA_BOLSA);
+  document.getElementById("pa-ahora").textContent = fmtCOP(valor);
+  document.getElementById("pa-quedan").textContent = fmtCOP(PA_BOLSA - valor);
+  const el = document.getElementById("pa-resumen");
+  let texto = "", clase = "hint";
+  if(valor > PA_BOLSA + 0.005){ texto = `Solo hay ${fmtCOP(PA_BOLSA)} por aplicar de ${PA_ASESOR}.`; clase = "hint lookup-warn"; }
+  else if(saldo !== null && valor + extra > saldo + 0.5){ texto = `Lo aplicado (${fmtCOP(valor + extra)}) excede el saldo de la factura (${fmtCOP(saldo)}).`; clase = "hint lookup-warn"; }
+  else if(valor > 0){
+    texto = `Aplicado ${fmtCOP(valor)} · quedan por aplicar ${fmtCOP(PA_BOLSA - valor)}`;
+    if(saldo !== null){ const resto = r2c(saldo - valor - extra); texto += ` · la factura queda ${resto <= 0.5 ? "pagada" : "con saldo " + fmtCOP(resto)}`; clase = "hint lookup-ok"; }
+  }
+  el.textContent = texto; el.className = clase;
+  pintarFacturasPA();
+}
+["pa-valor", "pa-descuento", "pa-retencion", "pa-dev-valor"].forEach(id => document.getElementById(id).addEventListener("input", actualizarResumenPA));
+document.getElementById("pa-todo").addEventListener("click", () => {
+  const saldoTxt = document.getElementById("pa-factura").dataset.saldo, extra = paNum("pa-descuento") + paNum("pa-retencion") + paNum("pa-dev-valor");
+  const tope = saldoTxt !== undefined ? parseFloat(saldoTxt) - extra : PA_BOLSA;
+  document.getElementById("pa-valor").value = r2c(Math.max(0, Math.min(PA_BOLSA, tope))); actualizarResumenPA();
+});
+document.getElementById("pa-saldo").addEventListener("click", () => {
+  const saldoTxt = document.getElementById("pa-factura").dataset.saldo;
+  if(saldoTxt === undefined){ const el = document.getElementById("pa-resumen"); el.textContent = "Primero escribe o elige la factura."; el.className = "hint lookup-warn"; return; }
+  const extra = paNum("pa-descuento") + paNum("pa-retencion") + paNum("pa-dev-valor");
+  document.getElementById("pa-valor").value = r2c(Math.max(0, Math.min(PA_BOLSA, parseFloat(saldoTxt) - extra))); actualizarResumenPA();
+});
+document.getElementById("form-pa").addEventListener("submit", async e => {
+  e.preventDefault();
+  const msg = document.getElementById("pa-msg"), btn = document.getElementById("pa-submit"), campo = document.getElementById("pa-factura");
+  msg.textContent = ""; msg.className = "hint";
+  const factura = campo.value.trim(), valor = paNum("pa-valor");
+  if(!factura || campo.dataset.saldo === undefined){ msg.textContent = "Escribe o elige una factura que exista."; msg.className = "hint lookup-warn"; return; }
+  if(!(valor > 0)){ msg.textContent = "Indica el valor a aplicar."; msg.className = "hint lookup-warn"; return; }
+  if(valor > PA_BOLSA + 0.005){ msg.textContent = `Solo hay ${fmtCOP(PA_BOLSA)} por aplicar de ${PA_ASESOR}.`; msg.className = "hint lookup-warn"; return; }
+  if(paNum("pa-dev-ref") === 0 && document.getElementById("pa-dev-ref").value.trim() && !(paNum("pa-dev-valor") > 0)){ msg.textContent = "Si escribes una referencia de devolución, indica también el valor devuelto."; msg.className = "hint lookup-warn"; return; }
+  btn.disabled = true; btn.textContent = "Aplicando...";
+  const { data, error } = await sb.rpc("aplicar_comprobante_pendiente", {
+    p_asesor: PA_ASESOR, p_factura: factura, p_valor: valor, p_descuento: paNum("pa-descuento"), p_retencion: paNum("pa-retencion"),
+    p_dev_cantidad: null, p_dev_valor: paNum("pa-dev-valor"), p_dev_referencia: document.getElementById("pa-dev-ref").value.trim() || null });
+  btn.disabled = false; btn.textContent = "Aplicar a la factura";
+  if(error){ msg.textContent = "No se pudo aplicar: " + error.message; msg.className = "hint lookup-warn"; return; }
+  document.getElementById("form-pa").reset(); delete campo.dataset.saldo; delete campo.dataset.cliente; document.getElementById("pa-fac-status").textContent = "";
+  await cargarBolsa();
+  msg.textContent = `Aplicado ${fmtCOP(data.aplicado)} a ${data.factura}` + (data.saldo_factura <= 0.5 ? " (queda pagada)" : ` (saldo ${fmtCOP(data.saldo_factura)})`)
+    + `. ${data.bolsa_restante > 0.5 ? `Quedan ${fmtCOP(data.bolsa_restante)} por aplicar de ${PA_ASESOR || "este asesor"}.` : "No queda nada por aplicar de este asesor."}`;
+  msg.className = "hint lookup-ok";
+  cargarHistorialComprobantes();
 });
 </script>
 </body>
