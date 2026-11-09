@@ -192,6 +192,14 @@
   .aviso-sistema{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; padding:9px 20px; background:#E8F4FD; border-bottom:1px solid #9CC9EA; color:#1F4E79; font-size:13px; }
   .aviso-sistema button{ background:#1F4E79; color:#fff; border:0; padding:6px 14px; font-weight:600; cursor:pointer; }
   .aviso-esquema{ background:#FFF3CD; border-bottom-color:#E0C36A; color:#6B5100; }
+  .subnav{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .subtab{ background:#fff; border:1.5px solid var(--line); padding:9px 16px; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:.05em; font-size:12px; cursor:pointer; }
+  .subtab.active{ background:var(--steel-900); color:#fff; border-color:var(--steel-900); }
+  .prov-sec:not(.activa){ display:none; }
+  .modal-fondo{ position:fixed; inset:0; background:rgba(20,25,35,.55); display:none; align-items:center; justify-content:center; z-index:60; padding:16px; }
+  .modal-fondo.abierto{ display:flex; }
+  .modal-caja{ background:#fff; max-width:600px; width:100%; max-height:90vh; overflow:auto; padding:22px 24px; border-radius:3px; }
+  .badge-plastico{ background:#E3EEFB; color:#1A4FA3; }
   .gasto-anulado td{ opacity:.55; }
   .gasto-anulado td:last-child{ opacity:1; }
 </style>
@@ -199,6 +207,48 @@
 <body>
 
 <!-- ================= LOGIN ================= -->
+<!-- Ventanas emergentes (Proveedores) -->
+<div class="modal-fondo" id="modal-prov-nuevo">
+  <div class="modal-caja">
+    <h2>Nuevo proveedor</h2>
+    <form id="form-prov-nuevo">
+      <div class="grid">
+        <div class="field full"><label>Nombre / razón social *</label><input type="text" id="pn-nombre" required autocomplete="off"></div>
+        <div class="field"><label>NIT</label><input type="text" id="pn-nit" autocomplete="off"></div>
+        <div class="field"><label>Teléfono</label><input type="text" id="pn-telefono" inputmode="tel" autocomplete="off"></div>
+        <div class="field"><label>Correo</label><input type="email" id="pn-correo" autocomplete="off"></div>
+        <div class="field"><label>Ciudad</label><input type="text" id="pn-ciudad" autocomplete="off"></div>
+      </div>
+      <div class="msg" id="pn-msg"></div>
+      <div style="display:flex; gap:10px; margin-top:12px;">
+        <button type="submit" class="btn-submit" id="pn-submit">Guardar proveedor</button>
+        <button type="button" class="btn-submit" id="pn-cancelar" style="background:var(--steel-800);">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="modal-fondo" id="modal-factura-prov">
+  <div class="modal-caja">
+    <h2>Editar factura de proveedor</h2>
+    <form id="form-factura-prov">
+      <div class="grid">
+        <div class="field"><label>Proveedor</label><input type="text" id="fe-proveedor" readonly></div>
+        <div class="field"><label>N° de factura</label><input type="text" id="fe-n_factura" readonly></div>
+        <div class="field"><label>Fecha *</label><input type="date" id="fe-fecha" required></div>
+        <div class="field"><label>Valor *</label><input type="number" step="0.01" id="fe-valor" required></div>
+        <div class="field"><label>Vencimiento</label><input type="date" id="fe-vencimiento"></div>
+        <div class="field"><label>Observaciones</label><input type="text" id="fe-observaciones"></div>
+      </div>
+      <div class="hint" id="fe-info" style="margin-top:8px;"></div>
+      <div class="msg" id="fe-msg"></div>
+      <div style="display:flex; gap:10px; margin-top:12px;">
+        <button type="submit" class="btn-submit" id="fe-submit">Guardar cambios</button>
+        <button type="button" class="btn-submit" id="fe-cancelar" style="background:var(--steel-800);">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="login-screen">
   <form class="login-card" id="login-form">
     <p class="brand" id="brand-login">Boreal S.A.S.</p>
@@ -366,6 +416,14 @@
             </select>
           </div>
           <div class="field">
+            <label>Tipo de documento</label>
+            <select id="v-hist-tipo"><option value="">Todos</option><option value="Factura">Factura</option><option value="Remisión">Remisión</option></select>
+          </div>
+          <div class="field">
+            <label>Ordenar por</label>
+            <select id="v-hist-orden"><option value="numero">N° de documento (mayor a menor)</option><option value="fecha">Fecha (más reciente)</option></select>
+          </div>
+          <div class="field">
             <label>Mes</label>
             <input type="month" id="v-hist-mes">
           </div>
@@ -462,6 +520,11 @@
                 <option value="">Seleccionar...</option>
               </select>
             </div>
+            <div class="field">
+              <label>Plásticos</label>
+              <label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-weight:500; margin:0; padding:10px 0;">
+                <input type="checkbox" id="c-plasticos"> Este comprobante incluye pago de plásticos</label>
+            </div>
             <div class="field" id="c-entregado-wrap" style="display:none;">
               <label>Efectivo entregado por</label>
               <input type="text" id="c-entregado_por" placeholder="Nombre de quien entrega">
@@ -550,6 +613,10 @@
             <select id="c-hist-asesor" data-asesores>
               <option value="">Todos</option>
             </select>
+          </div>
+          <div class="field">
+            <label>Plásticos</label>
+            <select id="c-hist-pl"><option value="">Todos</option><option value="si">Sí</option><option value="no">No</option></select>
           </div>
           <div class="field">
             <label>Verificado en banco</label>
@@ -711,8 +778,15 @@
 
     <!-- ---------- PROVEEDORES Y GASTOS ---------- -->
     <section class="view" id="view-proveedores">
+      <div class="subnav" id="prov-subnav">
+        <button type="button" class="subtab active" data-sec="registrar">Registrar compra y pago</button>
+        <button type="button" class="subtab" data-sec="cartera">Resumen y cartera</button>
+        <button type="button" class="subtab" data-sec="facturas">Facturas de proveedores</button>
+        <button type="button" class="btn-submit" id="prov-nuevo-btn" style="margin-left:auto; padding:8px 16px;">+ Nuevo proveedor</button>
+      </div>
 
-      <div class="panel">
+
+      <div class="panel prov-sec activa" data-sec="registrar">
         <h2>Registrar compra a proveedor</h2>
         <form id="form-compra">
           <div class="grid">
@@ -753,7 +827,7 @@
         </form>
       </div>
 
-      <div class="panel">
+      <div class="panel prov-sec activa" data-sec="registrar">
         <h2>Registrar pago a proveedor</h2>
         <form id="form-pago-prov">
           <div class="grid">
@@ -795,7 +869,7 @@
         </form>
       </div>
 
-      <div class="panel">
+      <div class="panel prov-sec" data-sec="cartera">
         <h2>Resumen por proveedor</h2>
         <div class="filters">
           <div class="field grow">
@@ -825,7 +899,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel prov-sec" data-sec="cartera">
         <h2>Cartera con proveedores (saldos pendientes)</h2>
         <div class="filters">
           <div class="field grow">
@@ -851,6 +925,31 @@
           <table id="cprov-tabla">
             <thead><tr><th>Proveedor</th><th>Factura</th><th>Fecha</th><th>Vencimiento</th><th class="num">Valor</th><th class="num">Abono</th><th class="num">Saldo</th></tr></thead>
             <tbody><tr><td colspan="7" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel prov-sec" data-sec="facturas">
+        <h2>Facturas de proveedores</h2>
+        <div class="hint" style="margin-bottom:10px;">Todas las facturas registradas por proveedor. "Editar" corrige la fecha, el valor, el vencimiento y las observaciones; el proveedor y el N° de factura no se cambian porque los pagos se enlazan por ellos, y lo abonado sale de los pagos registrados.</div>
+        <div class="filters">
+          <div class="field grow"><label>Proveedor o N° de factura</label><input type="text" id="fp-buscar" placeholder="Buscar..."></div>
+          <div class="field"><label>Estado</label>
+            <select id="fp-estado"><option value="">Todas</option><option value="saldo">Con saldo</option><option value="pagada">Pagadas</option></select></div>
+          <div class="field"><label>Desde</label><input type="date" id="fp-desde"></div>
+          <div class="field"><label>Hasta</label><input type="date" id="fp-hasta"></div>
+        </div>
+        <div class="totals-strip">
+          <div class="total-card"><div class="label">Facturas</div><div class="value" id="fp-n">0</div></div>
+          <div class="total-card"><div class="label">Valor</div><div class="value" id="fp-valor">$0</div></div>
+          <div class="total-card"><div class="label">Abonado</div><div class="value" id="fp-abono">$0</div></div>
+          <div class="total-card accent"><div class="label">Saldo</div><div class="value" id="fp-saldo">$0</div></div>
+        </div>
+        <div class="hint" id="fp-msg" style="margin:6px 0;"></div>
+        <div class="table-wrap">
+          <table id="fp-tabla">
+            <thead><tr><th>Fecha</th><th>Proveedor</th><th>N° factura</th><th class="num">Valor</th><th class="num">Abonado</th><th class="num">Saldo</th><th>Vence</th><th>Estado</th><th></th></tr></thead>
+            <tbody><tr><td colspan="9" class="empty-state">Cargando...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1244,8 +1343,8 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v15";
-const ESQUEMA_REQUERIDO = 15;
+const APP_VERSION = "v16";
+const ESQUEMA_REQUERIDO = 16;
 
 const EMPRESA = {
   nombre: "Boreal S.A.S.",
@@ -1447,7 +1546,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     tab.classList.add("active");
     document.getElementById("view-" + tab.dataset.view).classList.add("active");
     if(tab.dataset.view === "cartera"){ cargarCartera(); cargarSaldosFavor(); }
-    if(tab.dataset.view === "proveedores"){ cargarCarteraProveedores(); cargarListaProveedores(); }
+    if(tab.dataset.view === "proveedores"){ cargarCarteraProveedores(); cargarListaProveedores(); if(document.querySelector('#prov-subnav .subtab.active').dataset.sec === "facturas") cargarFacturasProv(); }
     if(tab.dataset.view === "ventas") cargarHistorialVentas();
     if(tab.dataset.view === "comprobantes") cargarHistorialComprobantes();
     if(tab.dataset.view === "clientes") cargarClientes();
@@ -2024,12 +2123,15 @@ async function cargarHistorialVentas(){
 
   const cliente = document.getElementById("v-hist-cliente").value.trim();
   const comercial = document.getElementById("v-hist-comercial").value;
+  const tipoDoc = document.getElementById("v-hist-tipo").value;
+  const orden = document.getElementById("v-hist-orden").value;
   const desde = document.getElementById("v-hist-desde").value;
   const hasta = document.getElementById("v-hist-hasta").value;
 
   const filtrar = q => {
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
     if(comercial) q = q.eq("comercial", comercial);
+    if(tipoDoc) q = q.eq("tipo_documento", tipoDoc);
     if(desde) q = q.gte("fecha_factura", desde);
     if(hasta) q = q.lte("fecha_factura", hasta);
     return q;
@@ -2037,7 +2139,8 @@ async function cargarHistorialVentas(){
 
   const consultaFilas = traerFilas(() => filtrar(sb.from("ventas")
     .select("id,fecha_factura,fecha_despacho,fecha_abono,n_factura,nit,cliente,comercial,ciudad,valor_factura,abonado,estado,nota_credito,referencia_nota_credito,descuento,retencion,mes_a_aplicar,recibo_contabilidad"))
-    .order("fecha_factura", { ascending: false }).order("id", { ascending: false }), limiteHist.v);
+    .order(...(orden === "fecha" ? ["fecha_factura", { ascending: false }] : ["n_documento_num", { ascending: false, nullsFirst: false }]))
+    .order("id", { ascending: false }), limiteHist.v);
   const consultaTotal = totalFiltrado(() => filtrar(sb.from("ventas").select("id,valor_factura")), "valor_factura").catch(() => null);
 
   const [{ data, error }, totales] = await Promise.all([consultaFilas, consultaTotal, cargarRecibosCaja()]);
@@ -2067,6 +2170,7 @@ async function cargarHistorialVentas(){
 }
 document.getElementById("v-hist-buscar").addEventListener("click", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-comercial").addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
+["v-hist-tipo", "v-hist-orden"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); }));
 document.getElementById("v-hist-mas").addEventListener("click", () => { limiteHist.v += LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-todo").addEventListener("click", () => { limiteHist.v = 100000; cargarHistorialVentas(); });
 document.getElementById("v-hist-cliente").addEventListener("keydown", e => { if(e.key==="Enter") cargarHistorialVentas(); });
@@ -2149,6 +2253,7 @@ document.getElementById("form-comprobante").addEventListener("submit", async (e)
     recibo_caja: document.getElementById("c-recibo_caja").value.trim() || null,
     banco: cBanco.value || null,
     asesor: document.getElementById("c-asesor").value || null,
+    pago_plasticos: document.getElementById("c-plasticos").checked,
     mes_comercial: mesDe(fecha_pago),
   };
 
@@ -2217,7 +2322,7 @@ document.getElementById("form-comprobante").addEventListener("submit", async (e)
     let extraMsg = "";
     if(grupoEdicion){
       const comp = { fecha_pago: base.fecha_pago, nit: base.nit, cliente: base.cliente, recibo_caja: base.recibo_caja, banco: base.banco,
-                     asesor: base.asesor, entregado_por: filaPrincipal.entregado_por, valor_total_comprobante: valorComprobante };
+                     asesor: base.asesor, entregado_por: filaPrincipal.entregado_por, valor_total_comprobante: valorComprobante, pago_plasticos: base.pago_plasticos };
       const cambios = {};
       for(const k of Object.keys(comp)){
         const igual = k === "valor_total_comprobante"
@@ -2406,7 +2511,7 @@ async function editarComprobante(id){
     original: {
       fecha_pago: fila.fecha_pago, nit: fila.nit ?? null, cliente: fila.cliente ?? null, recibo_caja: fila.recibo_caja ?? null,
       banco: fila.banco ?? null, asesor: fila.asesor ?? null, entregado_por: fila.entregado_por ?? null,
-      valor_total_comprobante: fila.valor_total_comprobante ?? null,
+      valor_total_comprobante: fila.valor_total_comprobante ?? null, pago_plasticos: !!fila.pago_plasticos,
     },
   } : null;
   if(grupoEdicion){
@@ -2427,6 +2532,7 @@ async function editarComprobante(id){
   }
   document.getElementById("c-asesor").value = fila.asesor || "";
   document.getElementById("c-recibo_caja").value = fila.recibo_caja || "";
+  document.getElementById("c-plasticos").checked = !!fila.pago_plasticos;
   asegurarOpcionBanco(fila.banco);
   cBanco.value = fila.banco || "";
   cBanco.dispatchEvent(new Event("change"));
@@ -2483,6 +2589,7 @@ async function cargarHistorialComprobantes(){
   const cliente = document.getElementById("c-hist-cliente").value.trim();
   const asesorFiltro = document.getElementById("c-hist-asesor").value;
   const vbFiltro = document.getElementById("c-hist-vb").value;
+  const plFiltro = document.getElementById("c-hist-pl").value;
   const scFiltro = document.getElementById("c-hist-sc").value;
   const desde = document.getElementById("c-hist-desde").value;
   const hasta = document.getElementById("c-hist-hasta").value;
@@ -2491,6 +2598,7 @@ async function cargarHistorialComprobantes(){
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
     if(asesorFiltro) q = q.eq("asesor", asesorFiltro);
     if(vbFiltro) q = q.eq("verificado_banco", vbFiltro === "si");
+    if(plFiltro) q = q.eq("pago_plasticos", plFiltro === "si");
     if(scFiltro) q = q.eq("suma_cuadra", scFiltro === "si");
     if(desde) q = q.gte("fecha_pago", desde);
     if(hasta) q = q.lte("fecha_pago", hasta);
@@ -2498,7 +2606,7 @@ async function cargarHistorialComprobantes(){
   };
 
   const consultaFilas = traerFilas(() => filtrar(sb.from("comprobantes")
-    .select("id,fecha_pago,nit,n_factura_ref,cliente,asesor,recibo_caja,banco,entregado_por,valor_pagado,descuento,descuento_tipo,retencion,devolucion_cantidad,devolucion_valor,devolucion_referencia,tipo_pago,grupo_id,liquidacion_id,valor_total_comprobante,verificado_banco,verificado_banco_por,verificado_banco_en,suma_cuadra,suma_cuadra_por,suma_cuadra_en"))
+    .select("id,fecha_pago,nit,n_factura_ref,cliente,asesor,recibo_caja,banco,entregado_por,valor_pagado,descuento,descuento_tipo,retencion,devolucion_cantidad,devolucion_valor,devolucion_referencia,tipo_pago,grupo_id,liquidacion_id,valor_total_comprobante,verificado_banco,verificado_banco_por,verificado_banco_en,suma_cuadra,suma_cuadra_por,suma_cuadra_en,pago_plasticos"))
     .order("fecha_pago", { ascending: false }).order("id", { ascending: false }), limiteHist.c);
   const consultaTotal = totalFiltrado(() => filtrar(sb.from("comprobantes").select("id,valor_pagado")), "valor_pagado").catch(() => null);
 
@@ -2557,7 +2665,7 @@ function pintarHistorialComprobantes(){
       <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
       <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
       <td class="num">${p.valor_total_comprobante != null && Math.abs(p.valor_total_comprobante - p.valor_pagado) > 0.01 ? fmtCOP(p.valor_total_comprobante) : "—"}</td>
-      <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}</td>
+      <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}${p.pago_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td>
       <td>${etiquetaBanco(p.banco)}</td>
       <td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>
       <td>${accion}</td>
@@ -2568,7 +2676,7 @@ document.querySelector("#c-recientes tbody").addEventListener("change", e => {
   const el = e.target;
   if(el.classList && el.classList.contains("chk-val")) marcarValidacion(parseInt(el.dataset.id, 10), el.dataset.campo, el.checked, el);
 });
-["c-hist-vb", "c-hist-sc"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); }));
+["c-hist-vb", "c-hist-sc", "c-hist-pl"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); }));
 document.getElementById("c-hist-buscar").addEventListener("click", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); });
 document.getElementById("c-hist-asesor").addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); });
 document.getElementById("c-hist-mas").addEventListener("click", () => { limiteHist.c += LIMITE_INICIAL; cargarHistorialComprobantes(); });
@@ -3677,6 +3785,131 @@ async function verificarEsquema(){
     box.style.display = "none";
   }
 }
+
+/* ============================================================
+   PROVEEDORES: subpestañas, proveedor nuevo y listado de facturas editable
+   ============================================================ */
+function abrirModal(id){ document.getElementById(id).classList.add("abierto"); }
+function cerrarModal(id){ document.getElementById(id).classList.remove("abierto"); }
+document.querySelectorAll(".modal-fondo").forEach(m => {
+  m.addEventListener("click", e => { if(e.target === m) m.classList.remove("abierto"); });   // clic fuera de la ventana
+});
+document.addEventListener("keydown", e => { if(e.key === "Escape") document.querySelectorAll(".modal-fondo.abierto").forEach(m => m.classList.remove("abierto")); });
+
+function mostrarSeccionProv(sec){
+  document.querySelectorAll("#prov-subnav .subtab").forEach(b => b.classList.toggle("active", b.dataset.sec === sec));
+  document.querySelectorAll("#view-proveedores .prov-sec").forEach(p => p.classList.toggle("activa", p.dataset.sec === sec));
+  if(sec === "facturas") cargarFacturasProv();
+  if(sec === "cartera") cargarCarteraProveedores();
+}
+document.querySelectorAll("#prov-subnav .subtab").forEach(b => b.addEventListener("click", () => mostrarSeccionProv(b.dataset.sec)));
+
+/* --- Nuevo proveedor --- */
+document.getElementById("prov-nuevo-btn").addEventListener("click", () => {
+  document.getElementById("form-prov-nuevo").reset();
+  const m = document.getElementById("pn-msg"); m.textContent = ""; m.className = "msg";
+  abrirModal("modal-prov-nuevo");
+  document.getElementById("pn-nombre").focus();
+});
+document.getElementById("pn-cancelar").addEventListener("click", () => cerrarModal("modal-prov-nuevo"));
+document.getElementById("form-prov-nuevo").addEventListener("submit", async e => {
+  e.preventDefault();
+  const msg = document.getElementById("pn-msg"), btn = document.getElementById("pn-submit");
+  msg.textContent = ""; msg.className = "msg";
+  const nombre = colapsar(document.getElementById("pn-nombre").value);
+  if(!nombre){ msg.textContent = "Escribe el nombre del proveedor."; msg.classList.add("err"); return; }
+  const correo = colapsar(document.getElementById("pn-correo").value).toLowerCase();
+  if(correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)){ msg.textContent = "El correo no parece válido."; msg.classList.add("err"); return; }
+  btn.disabled = true; btn.textContent = "Guardando...";
+  const { data: ya } = await sb.from("proveedores").select("id,nombre").ilike("nombre", nombre.replace(/[%_]/g, "")).limit(1);
+  if(ya && ya.length > 0){
+    btn.disabled = false; btn.textContent = "Guardar proveedor";
+    msg.textContent = `Ya existe un proveedor con ese nombre: ${ya[0].nombre}.`; msg.classList.add("err"); return;
+  }
+  const { error } = await sb.from("proveedores").insert([{
+    nombre, nit: nullSiVacio(document.getElementById("pn-nit").value), telefono: limpiarTel(document.getElementById("pn-telefono").value) || null,
+    correo: correo || null, ciudad: nullSiVacio(document.getElementById("pn-ciudad").value), activo: true }]);
+  btn.disabled = false; btn.textContent = "Guardar proveedor";
+  if(error){
+    msg.textContent = error.code === "23505" ? "Ya existe un proveedor con ese nombre o NIT." : "No se pudo guardar: " + error.message;
+    msg.classList.add("err"); return;
+  }
+  cerrarModal("modal-prov-nuevo");
+  proveedoresCargados = false; await cargarListaProveedores();                       // el proveedor nuevo ya sale al escribir en compras y pagos
+  const cp = document.getElementById("cp-proveedor"); if(!cp.value) cp.value = nombre;
+  const pp = document.getElementById("pp-proveedor"); if(!pp.value) pp.value = nombre;
+  mostrarSeccionProv("registrar");
+  const m2 = document.getElementById("cp-msg"); m2.textContent = `Proveedor creado: ${nombre}. Ya puedes registrarle compras y pagos.`; m2.className = "msg ok";
+});
+
+/* --- Facturas de proveedores --- */
+let FACTURAS_PROV = [];
+let tFp;
+async function cargarFacturasProv(){
+  const tb = document.querySelector("#fp-tabla tbody");
+  const texto = (document.getElementById("fp-buscar").value || "").replace(/[,()%*]/g, " ").replace(/\s+/g, " ").trim();
+  const est = document.getElementById("fp-estado").value, desde = document.getElementById("fp-desde").value, hasta = document.getElementById("fp-hasta").value;
+  let q = sb.from("compras_proveedores").select("id,fecha,proveedor,n_factura,valor,abono,saldo,vencimiento,estado,observaciones")
+    .order("fecha", { ascending: false }).order("id", { ascending: false }).limit(300);
+  if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
+  if(est === "saldo") q = q.gt("saldo", 0.5);
+  if(est === "pagada") q = q.lte("saldo", 0.5);
+  if(desde) q = q.gte("fecha", desde);
+  if(hasta) q = q.lte("fecha", hasta);
+  const { data, error } = await q;
+  if(error){ tb.innerHTML = `<tr><td colspan="9" class="empty-state">No se pudo cargar: ${escapar(error.message)}</td></tr>`; return; }
+  FACTURAS_PROV = data || [];
+  const suma = c => FACTURAS_PROV.reduce((a, r) => a + (parseFloat(r[c]) || 0), 0);
+  document.getElementById("fp-n").textContent = FACTURAS_PROV.length;
+  document.getElementById("fp-valor").textContent = fmtCOP(suma("valor"));
+  document.getElementById("fp-abono").textContent = fmtCOP(suma("abono"));
+  document.getElementById("fp-saldo").textContent = fmtCOP(suma("saldo"));
+  document.getElementById("fp-msg").textContent = FACTURAS_PROV.length >= 300 ? "Se muestran las 300 más recientes: refina la búsqueda para ver otras." : "";
+  tb.innerHTML = FACTURAS_PROV.length === 0
+    ? `<tr><td colspan="9" class="empty-state">No hay facturas con esos filtros.</td></tr>`
+    : FACTURAS_PROV.map(r => `<tr>
+        <td>${escapar(r.fecha)}</td><td>${escapar(r.proveedor)}</td><td>${escapar(r.n_factura)}</td>
+        <td class="num">${fmtCOP(r.valor)}</td><td class="num">${fmtCOP(r.abono || 0)}</td><td class="num">${fmtCOP(r.saldo)}</td>
+        <td>${escapar(r.vencimiento || "—")}</td><td>${(parseFloat(r.saldo) || 0) <= 0.5 ? "Pagada" : "Pendiente"}</td>
+        <td><button type="button" class="btn-submit" data-fp-editar="${r.id}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Editar</button></td></tr>`).join("");
+}
+document.getElementById("fp-buscar").addEventListener("input", () => { clearTimeout(tFp); tFp = setTimeout(cargarFacturasProv, 350); });
+["fp-estado", "fp-desde", "fp-hasta"].forEach(id => document.getElementById(id).addEventListener("change", cargarFacturasProv));
+
+let FACTURA_PROV_EDITANDO = null;
+document.querySelector("#fp-tabla tbody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-fp-editar]"); if(!b) return;
+  const r = FACTURAS_PROV.find(x => x.id === parseInt(b.dataset.fpEditar, 10)); if(!r) return;
+  FACTURA_PROV_EDITANDO = r;
+  document.getElementById("fe-proveedor").value = r.proveedor; document.getElementById("fe-n_factura").value = r.n_factura;
+  document.getElementById("fe-fecha").value = r.fecha || ""; document.getElementById("fe-valor").value = r.valor ?? "";
+  document.getElementById("fe-vencimiento").value = r.vencimiento || ""; document.getElementById("fe-observaciones").value = r.observaciones || "";
+  document.getElementById("fe-info").textContent = `Abonado ${fmtCOP(r.abono || 0)} (sale de los pagos registrados) · saldo actual ${fmtCOP(r.saldo)}. El saldo se recalcula con el valor nuevo.`;
+  const m = document.getElementById("fe-msg"); m.textContent = ""; m.className = "msg";
+  abrirModal("modal-factura-prov");
+});
+document.getElementById("fe-cancelar").addEventListener("click", () => cerrarModal("modal-factura-prov"));
+document.getElementById("form-factura-prov").addEventListener("submit", async e => {
+  e.preventDefault();
+  const r = FACTURA_PROV_EDITANDO; if(!r) return;
+  const msg = document.getElementById("fe-msg"), btn = document.getElementById("fe-submit");
+  msg.textContent = ""; msg.className = "msg";
+  const fecha = document.getElementById("fe-fecha").value, valor = parseFloat(document.getElementById("fe-valor").value) || 0, abono = parseFloat(r.abono) || 0;
+  if(!fecha || !(valor > 0)){ msg.textContent = "Indica la fecha y un valor mayor a cero."; msg.classList.add("err"); return; }
+  if(valor < abono - 0.005){ msg.textContent = `El valor no puede ser menor a lo ya abonado (${fmtCOP(abono)}).`; msg.classList.add("err"); return; }
+  btn.disabled = true; btn.textContent = "Guardando...";
+  const { error } = await sb.from("compras_proveedores").update({
+    fecha, valor, vencimiento: document.getElementById("fe-vencimiento").value || null,
+    observaciones: nullSiVacio(document.getElementById("fe-observaciones").value), mes_comercial: mesDe(fecha),
+    estado: abono >= valor && valor > 0 ? "Pagado" : "Pendiente" }).eq("id", r.id);
+  btn.disabled = false; btn.textContent = "Guardar cambios";
+  if(error){ msg.textContent = "No se pudo guardar: " + error.message; msg.classList.add("err"); return; }
+  cerrarModal("modal-factura-prov");
+  FACTURA_PROV_EDITANDO = null;
+  cargarCarteraProveedores();
+  await cargarFacturasProv();   // la recarga reescribe el aviso: por eso el mensaje se pone después
+  const fm = document.getElementById("fp-msg"); fm.textContent = `Factura ${r.n_factura} de ${r.proveedor} actualizada.`; fm.className = "hint lookup-ok";
+});
 </script>
 </body>
 </html>
