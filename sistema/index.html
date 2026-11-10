@@ -990,6 +990,8 @@
           <div class="field grow"><label>Proveedor o N° de factura</label><input type="text" id="hp-buscar" placeholder="Buscar..."></div>
           <div class="field"><label>Desde</label><input type="date" id="hp-desde"></div>
           <div class="field"><label>Hasta</label><input type="date" id="hp-hasta"></div>
+          <div class="field"><label>&nbsp;</label>
+            <label style="font-weight:400; display:flex; gap:6px; align-items:center; padding:10px 0;"><input type="checkbox" id="hp-anulados"> Mostrar anulados</label></div>
         </div>
         <div class="totals-strip">
           <div class="total-card"><div class="label">Pagos</div><div class="value" id="hp-n">0</div></div>
@@ -998,8 +1000,8 @@
         <div class="hint" id="hp-msg" style="margin:6px 0;"></div>
         <div class="table-wrap">
           <table id="hp-tabla">
-            <thead><tr><th>Fecha de pago</th><th>Proveedor</th><th>N° factura</th><th class="num">Valor pagado</th><th>Estado</th><th>Observaciones</th></tr></thead>
-            <tbody><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
+            <thead><tr><th>Fecha de pago</th><th>Proveedor</th><th>N° factura</th><th class="num">Valor pagado</th><th>Estado</th><th>Observaciones</th><th></th></tr></thead>
+            <tbody><tr><td colspan="7" class="empty-state">Cargando...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1469,7 +1471,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -4338,24 +4340,95 @@ async function cargarPagosProv(){
   const tb = document.querySelector("#hp-tabla tbody");
   const texto = (document.getElementById("hp-buscar").value || "").replace(/[,()%*]/g, " ").replace(/\s+/g, " ").trim();
   const desde = document.getElementById("hp-desde").value, hasta = document.getElementById("hp-hasta").value;
-  let q = sb.from("pagos_proveedores").select("id,fecha_pago,proveedor,n_factura,valor_pagado,estado,observaciones")
-    .order("fecha_pago", { ascending: false }).order("id", { ascending: false }).limit(300);
-  if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
-  if(desde) q = q.gte("fecha_pago", desde);
-  if(hasta) q = q.lte("fecha_pago", hasta);
-  const { data, error } = await q;
-  if(error){ tb.innerHTML = `<tr><td colspan="6" class="empty-state">No se pudo cargar: ${escapar(error.message)}</td></tr>`; return; }
+  const mostrarAnulados = document.getElementById("hp-anulados").checked;
+  const consulta = cols => {
+    let q = sb.from("pagos_proveedores").select(cols)
+      .order("fecha_pago", { ascending: false }).order("id", { ascending: false }).limit(300);
+    if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
+    if(desde) q = q.gte("fecha_pago", desde);
+    if(hasta) q = q.lte("fecha_pago", hasta);
+    if(PAGOS_ANULAR.disponible && !mostrarAnulados) q = q.eq("anulado", false);
+    return q;
+  };
+  let { data, error } = await consulta(PAGOS_ANULAR.disponible ? "id,fecha_pago,proveedor,n_factura,valor_pagado,retencion,ica,estado,observaciones,anulado,anulado_motivo,anulado_por,anulado_en" : "id,fecha_pago,proveedor,n_factura,valor_pagado,estado,observaciones");
+  if(error && PAGOS_ANULAR.disponible){          // la base aún no tiene el parche v19: se muestra el historial sin anulación
+    PAGOS_ANULAR.disponible = false;
+    ({ data, error } = await consulta("id,fecha_pago,proveedor,n_factura,valor_pagado,estado,observaciones"));
+  }
+  if(error){ tb.innerHTML = `<tr><td colspan="7" class="empty-state">No se pudo cargar: ${escapar(error.message)}</td></tr>`; return; }
   const filas = data || [];
-  document.getElementById("hp-n").textContent = filas.length;
-  document.getElementById("hp-total").textContent = fmtCOP(filas.reduce((a, r) => a + (parseFloat(r.valor_pagado) || 0), 0));
+  HISTORIAL_PAGOS_PROV = filas;
+  const vigentes = filas.filter(r => !r.anulado);   // los anulados se ven pero no suman
+  document.getElementById("hp-n").textContent = vigentes.length;
+  document.getElementById("hp-total").textContent = fmtCOP(vigentes.reduce((a, r) => a + (parseFloat(r.valor_pagado) || 0), 0));
   document.getElementById("hp-msg").textContent = filas.length >= 300 ? "Se muestran los 300 más recientes: refina la búsqueda o las fechas para ver otros." : "";
+  const btnFila = "padding:5px 12px; font-size:11px;";
+  const fechaLocal = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
   tb.innerHTML = filas.length === 0
-    ? `<tr><td colspan="6" class="empty-state">No hay pagos con esos filtros.</td></tr>`
-    : filas.map(r => `<tr><td>${escapar(r.fecha_pago)}</td><td>${escapar(r.proveedor)}</td><td>${escapar(r.n_factura)}</td>
-        <td class="num">${fmtCOP(r.valor_pagado)}</td><td>${escapar(r.estado || "—")}</td><td>${escapar(r.observaciones || "")}</td></tr>`).join("");
+    ? `<tr><td colspan="7" class="empty-state">No hay pagos con esos filtros.</td></tr>`
+    : filas.map(r => {
+        const anul = !!r.anulado;
+        const tach = t => anul ? `<s>${t}</s>` : t;
+        const imp = (parseFloat(r.retencion) || 0) + (parseFloat(r.ica) || 0);
+        const nota = anul ? `Anulado por ${escapar(r.anulado_por || "—")}${r.anulado_en ? " el " + fechaLocal(r.anulado_en) : ""}: ${escapar(r.anulado_motivo || "")}`
+                          : (imp ? `Retención ${fmtCOP(r.retencion)} · ICA ${fmtCOP(r.ica)}` : "");
+        const acciones = !PAGOS_ANULAR.disponible || anul ? ""
+          : `<button type="button" class="btn-submit" data-hp-corregir="${r.id}" style="${btnFila} background:var(--steel-800);" title="Anula este pago y abre el formulario con sus datos para registrarlo bien">Corregir</button>
+             <button type="button" class="btn-submit" data-hp-anular="${r.id}" style="${btnFila} background:var(--red);">Anular</button>`;
+        return `<tr${anul ? ' class="gasto-anulado"' : ""}><td>${tach(escapar(r.fecha_pago))}</td><td>${tach(escapar(r.proveedor))}</td><td>${tach(escapar(r.n_factura))}</td>
+          <td class="num">${tach(fmtCOP(r.valor_pagado))}</td><td>${anul ? "Anulado" : escapar(r.estado || "—")}</td>
+          <td>${escapar(r.observaciones || "")}${nota ? `<br><span class="hint">${nota}</span>` : ""}</td><td>${acciones}</td></tr>`;
+      }).join("");
 }
 document.getElementById("hp-buscar").addEventListener("input", () => { clearTimeout(tHp); tHp = setTimeout(cargarPagosProv, 350); });
-["hp-desde", "hp-hasta"].forEach(id => document.getElementById(id).addEventListener("change", cargarPagosProv));
+["hp-desde", "hp-hasta", "hp-anulados"].forEach(id => document.getElementById(id).addEventListener("change", cargarPagosProv));
+
+/* Anular un pago a proveedor (parche v19). No borra: queda con quién, cuándo y por qué; la factura recupera su saldo y el pago
+   deja de contar en el saldo en bancos. "Corregir" = anular + abrir el formulario de pago con los mismos datos para registrarlo bien. */
+const PAGOS_ANULAR = { disponible: true };
+let HISTORIAL_PAGOS_PROV = [];
+async function anularPagoProv(id, corregir){
+  const p = HISTORIAL_PAGOS_PROV.find(x => x.id === id);
+  if(!p) return;
+  const msg = document.getElementById("hp-msg");
+  const resumen = `${p.proveedor} · ${p.n_factura} · ${fmtCOP(p.valor_pagado)}${(parseFloat(p.retencion) || 0) + (parseFloat(p.ica) || 0) ? " (+ retención/ICA " + fmtCOP((parseFloat(p.retencion) || 0) + (parseFloat(p.ica) || 0)) + ")" : ""}`;
+  const motivo = (prompt(`Motivo para anular el pago de ${resumen} (obligatorio). Ejemplo: se registró dos veces.`, corregir ? "Corrección del pago" : "") || "").trim();
+  if(!motivo) return;
+  if(!confirm(`¿Anular el pago de ${resumen}?\n\nLa factura recupera su saldo y vuelve a Pendiente, y el pago deja de contar en el saldo en bancos. Queda guardado con el motivo y no se puede restaurar${corregir ? ". Después se abre el formulario para registrarlo de nuevo." : "."}`)) return;
+  const { error } = await sb.from("pagos_proveedores").update({ anulado: true, anulado_motivo: motivo }).eq("id", id).eq("anulado", false);
+  msg.className = "hint";
+  if(error){ msg.textContent = "No se pudo anular: " + error.message; return; }
+  olvidarFacturasProv();
+  cargarCarteraProveedores();
+  cargarPagosProv();
+  if(corregir) await precargarPagoParaCorregir(p);
+  else { msg.textContent = `Pago anulado: ${resumen}.`; }
+}
+async function precargarPagoParaCorregir(p){
+  limpiarFormularioPagoProv();
+  document.getElementById("pp-fecha_pago").value = p.fecha_pago || "";
+  document.getElementById("pp-proveedor").value = p.proveedor;
+  ppFacInput.value = p.n_factura;
+  document.getElementById("pp-valor_pagado").value = p.valor_pagado ?? "";
+  document.getElementById("pp-retencion").value = p.retencion || 0;
+  document.getElementById("pp-ica").value = p.ica || 0;
+  document.getElementById("pp-estado").value = p.estado || "";
+  document.getElementById("pp-observaciones").value = p.observaciones || "";
+  document.getElementById("pp-bogota").checked = (parseFloat(p.ica) || 0) > 0 || esBogota(PROV_CIUDAD[String(p.proveedor).trim().toLowerCase()]);
+  ppFacSugerida = String(p.proveedor).trim().toLowerCase() + "|" + p.n_factura;   // que no se pisen los valores precargados
+  mostrarSeccionProv("registrar");
+  await cargarOpcionesFacturasPP();
+  await buscarFacturaPP();
+  const m = document.getElementById("pp-msg");
+  m.textContent = "Pago anulado. Revisa los datos, corrige lo que haga falta y guarda el pago nuevo."; m.className = "msg ok";
+  document.getElementById("form-pago-prov").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+document.querySelector("#hp-tabla tbody").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if(!b) return;
+  if(b.dataset.hpAnular) anularPagoProv(parseInt(b.dataset.hpAnular, 10), false);
+  else if(b.dataset.hpCorregir) anularPagoProv(parseInt(b.dataset.hpCorregir, 10), true);
+});
 
 /* ============================================================
    POR APLICAR: bolsa de comprobantes sin factura, por asesor
