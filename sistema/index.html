@@ -1459,7 +1459,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2832,7 +2832,7 @@ function pintarHistorialComprobantes(){
     return `<tr>
       <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
       <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
-      <td class="num">${p.valor_total_comprobante != null && Math.abs(p.valor_total_comprobante - p.valor_pagado) > 0.01 ? fmtCOP(p.valor_total_comprobante) : "—"}</td>
+      <td class="num">${fmtCOP(p.valor_total_comprobante != null ? p.valor_total_comprobante : p.valor_pagado)}</td>
       <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}${p.pago_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td>
       <td>${etiquetaBanco(p.banco)}</td>
       <td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>
