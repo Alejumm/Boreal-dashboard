@@ -863,10 +863,20 @@
               <datalist id="lista-facturas-pp"></datalist>
               <div class="hint" id="pp-fac-status"></div>
             </div>
+            <div class="field" id="pp-imp-campos">
+              <label>Retención (2,5 %)</label>
+              <input type="number" step="1" min="0" id="pp-retencion" value="0">
+            </div>
+            <div class="field" id="pp-ica-campo">
+              <label>ICA (5 por mil)</label>
+              <input type="number" step="1" min="0" id="pp-ica" value="0">
+              <label style="font-weight:400; font-size:12px; margin-top:4px; display:flex; gap:6px; align-items:center;"><input type="checkbox" id="pp-bogota"> Proveedor de Bogotá</label>
+            </div>
             <div class="field">
-              <label>Valor pagado *</label>
+              <label>Valor pagado (neto) *</label>
               <input type="number" step="0.01" id="pp-valor_pagado" required>
             </div>
+            <div class="field full"><div class="hint" id="pp-imp-hint"></div></div>
             <div class="field">
               <label>Estado</label>
               <select id="pp-estado">
@@ -1459,7 +1469,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2995,8 +3005,9 @@ document.getElementById("cart-excel").addEventListener("click", descargarCartera
 let proveedoresCargados = false;
 async function cargarListaProveedores(){
   if(proveedoresCargados) return;
-  const { data, error } = await sb.from("proveedores").select("nombre").order("nombre");
+  const { data, error } = await sb.from("proveedores").select("nombre,ciudad").order("nombre");
   if(error || !data) return;
+  data.forEach(p => { PROV_CIUDAD[String(p.nombre).trim().toLowerCase()] = p.ciudad || ""; });
   const datalist = document.getElementById("lista-proveedores");
   datalist.innerHTML = data.map(p => `<option value="${p.nombre}">`).join("");
   proveedoresCargados = true;
@@ -3100,11 +3111,31 @@ async function facturasDeProveedor(nombre){
   const k = String(nombre || "").trim().toLowerCase();
   if(!k) return [];
   if(_facturasProvCache[k]) return _facturasProvCache[k];
-  const { data, error } = await sb.from("compras_proveedores").select("n_factura,saldo,valor,proveedor")
+  const consulta = cols => sb.from("compras_proveedores").select(cols)
     .ilike("proveedor", String(nombre).trim().replace(/[%_]/g, m => "\\" + m)).order("fecha", { ascending: false }).limit(1000);
+  let { data, error } = await consulta(PROV_IMP.disponible ? "n_factura,saldo,valor,abono,proveedor,retencion,ica" : "n_factura,saldo,valor,abono,proveedor");
+  if(error && PROV_IMP.disponible){            // la base aún no tiene el parche v18 (retención/ICA): se trabaja sin eso
+    PROV_IMP.disponible = false;
+    ({ data, error } = await consulta("n_factura,saldo,valor,abono,proveedor"));
+  }
   if(error) return [];
   _facturasProvCache[k] = data || [];
   return _facturasProvCache[k];
+}
+
+/* ---- Retención en la fuente e ICA de proveedores (parche SQL v18) ----
+   Retención: 2,5 % cuando la base llega a $523.000. ICA: 5 por mil, solo proveedores de Bogotá, cuando la base llega a $1.414.000.
+   Base = valor de la factura / ivaDivisor. Con 1 se calcula sobre el valor tal como está registrado (así se hizo en CASF 5716);
+   si el valor registrado incluye IVA y la base debe ser antes de IVA, poner 1.19. */
+const PROV_IMP = { retPct: 0.025, retBase: 523000, icaPct: 0.005, icaBase: 1414000, ivaDivisor: 1, disponible: true };
+const PROV_CIUDAD = {};   // proveedor (minúsculas) -> ciudad
+const esBogota = c => /bogot/.test(String(c || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase());
+function impuestosProveedor(valor, bogota, yaRet, yaIca){
+  const base = (parseFloat(valor) || 0) / PROV_IMP.ivaDivisor;
+  const retTotal = base >= PROV_IMP.retBase ? Math.round(base * PROV_IMP.retPct) : 0;
+  const icaTotal = bogota && base >= PROV_IMP.icaBase ? Math.round(base * PROV_IMP.icaPct) : 0;
+  return { base, retTotal, icaTotal,
+           ret: Math.max(0, retTotal - (parseFloat(yaRet) || 0)), ica: Math.max(0, icaTotal - (parseFloat(yaIca) || 0)) };
 }
 const olvidarFacturasProv = () => { Object.keys(_facturasProvCache).forEach(k => delete _facturasProvCache[k]); };
 /* Prefijo habitual del proveedor (CASF + espacio si así las escriben casi siempre), sacado de sus facturas ya registradas. */
@@ -3152,6 +3183,7 @@ async function cargarOpcionesFacturasPP(){
 async function buscarFacturaPP(){
   const nfac = ppFacInput.value.trim();
   const proveedor = ppProvInput.value.trim();
+  ppFacActual = null; document.getElementById("pp-imp-hint").textContent = "";
   if(!nfac){ ppFacStatus.textContent = ""; delete ppFacInput.dataset.saldo; return; }
   if(!proveedor){
     delete ppFacInput.dataset.saldo;
@@ -3167,6 +3199,7 @@ async function buscarFacturaPP(){
     if(r.factura.proveedor) ppProvInput.value = r.factura.proveedor;
     ppFacStatus.textContent = `Factura ${r.factura.n_factura} · Saldo pendiente: ${fmtCOP(r.factura.saldo)}`;
     ppFacStatus.className = "lookup-ok";
+    sugerirPagoPP(r.factura, false);
   } else if(r.tipo === "varias"){
     delete ppFacInput.dataset.saldo;
     ppFacStatus.textContent = "Hay varias facturas con ese número (" + r.candidatas.map(f => f.n_factura).join(", ") + "): escribe también las letras.";
@@ -3177,6 +3210,43 @@ async function buscarFacturaPP(){
     ppFacStatus.className = "lookup-warn";
   }
 }
+/* Al encontrar la factura se proponen retención, ICA y el neto a pagar para que la factura quede en saldo 0.
+   Todo se puede editar (p. ej. poner 0 en retención si es un abono parcial). Se rellena una sola vez por factura. */
+let ppFacSugerida = null, ppFacActual = null;
+function ppImpuestosActuales(){
+  return { ret: parseFloat(document.getElementById("pp-retencion").value) || 0, ica: parseFloat(document.getElementById("pp-ica").value) || 0 };
+}
+function pintarHintImpuestosPP(){
+  const hint = document.getElementById("pp-imp-hint"), f = ppFacActual;
+  if(!f || !PROV_IMP.disponible){ hint.textContent = ""; return; }
+  const bog = document.getElementById("pp-bogota").checked;
+  const calc = impuestosProveedor(f.valor, bog, f.retencion, f.ica);
+  const { ret, ica } = ppImpuestosActuales();
+  const neto = parseFloat(document.getElementById("pp-valor_pagado").value) || 0;
+  const saldoDespues = (parseFloat(f.saldo) || 0) - neto - ret - ica;
+  hint.innerHTML = `Valor factura ${fmtCOP(f.valor)} · base ${fmtCOP(calc.base)} · retención de la factura ${fmtCOP(calc.retTotal)}${bog ? " · ICA " + fmtCOP(calc.icaTotal) : ""}. `
+    + `Con este pago el saldo queda en <strong>${fmtCOP(saldoDespues)}</strong>.`;
+}
+function sugerirPagoPP(f, forzar){
+  ppFacActual = f;
+  const clave = (document.getElementById("pp-proveedor").value.trim().toLowerCase()) + "|" + f.n_factura;
+  if(!PROV_IMP.disponible){ pintarHintImpuestosPP(); return; }
+  if(!forzar && ppFacSugerida === clave){ pintarHintImpuestosPP(); return; }
+  if(!forzar && ppFacSugerida !== clave){
+    document.getElementById("pp-bogota").checked = esBogota(PROV_CIUDAD[document.getElementById("pp-proveedor").value.trim().toLowerCase()]);
+  }
+  ppFacSugerida = clave;
+  const calc = impuestosProveedor(f.valor, document.getElementById("pp-bogota").checked, f.retencion, f.ica);
+  const saldo = parseFloat(f.saldo) || 0;
+  const ret = Math.min(calc.ret, saldo), ica = Math.min(calc.ica, Math.max(0, saldo - ret));
+  document.getElementById("pp-retencion").value = ret;
+  document.getElementById("pp-ica").value = ica;
+  document.getElementById("pp-valor_pagado").value = Math.max(0, Math.round((saldo - ret - ica) * 100) / 100);
+  const est = document.getElementById("pp-estado"); if(!est.value) est.value = "Pago total";
+  pintarHintImpuestosPP();
+}
+document.getElementById("pp-bogota").addEventListener("change", () => { if(ppFacActual) sugerirPagoPP(ppFacActual, true); });
+["pp-retencion", "pp-ica", "pp-valor_pagado"].forEach(id => document.getElementById(id).addEventListener("input", pintarHintImpuestosPP));
 ppFacInput.addEventListener("input", () => { clearTimeout(tPpFac); tPpFac = setTimeout(buscarFacturaPP, 400); });
 ppFacInput.addEventListener("change", buscarFacturaPP);
 ppProvInput.addEventListener("input", () => { clearTimeout(tPpFac); tPpFac = setTimeout(() => { cargarOpcionesFacturasPP(); if(ppFacInput.value.trim()) buscarFacturaPP(); }, 400); });
@@ -3199,6 +3269,7 @@ document.getElementById("form-pago-prov").addEventListener("submit", async (e) =
       return r.tipo === "ok" ? r.factura.n_factura : t;   // número solo -> factura completa; si no se encuentra, como la escribieron
     })(),
     valor_pagado: parseFloat(document.getElementById("pp-valor_pagado").value) || 0,
+    ...(PROV_IMP.disponible ? { retencion: parseFloat(document.getElementById("pp-retencion").value) || 0, ica: parseFloat(document.getElementById("pp-ica").value) || 0 } : {}),
     estado: document.getElementById("pp-estado").value || null,
     observaciones: document.getElementById("pp-observaciones").value.trim() || null,
     mes_comercial: mesDe(fecha_pago),
@@ -3221,6 +3292,8 @@ document.getElementById("form-pago-prov").addEventListener("submit", async (e) =
 function limpiarFormularioPagoProv(){
   document.getElementById("form-pago-prov").reset();
   document.getElementById("pp-fac-status").textContent = "";
+  document.getElementById("pp-imp-hint").textContent = "";
+  ppFacSugerida = null; ppFacActual = null;
   document.getElementById("pp-msg").textContent = "";
   document.getElementById("pp-msg").className = "msg";
   delete ppFacInput.dataset.saldo;
