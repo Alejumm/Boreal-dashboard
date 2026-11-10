@@ -504,6 +504,7 @@
               <label>N° Factura / Remisión referencia *</label>
               <input type="text" id="c-n_factura_ref" required placeholder="Buscar factura...">
               <div class="hint" id="c-fac-status"></div>
+              <div class="hint" id="c-fac-plasticos" style="display:none;"></div>
             </div>
             <div class="field">
               <label>Valor pagado (abono a esta factura) *</label>
@@ -1481,7 +1482,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -1790,11 +1791,27 @@ async function buscarVentaPorFactura(nfacRaw){
   const sinPrefijo = nfacRaw.replace(/^FVE-?/i, "").trim();
   const candidatos = [...new Set([nfacRaw, `FVE-${sinPrefijo}`, sinPrefijo])];
   const orFilter = candidatos.map(c => `n_factura.eq.${c}`).join(",");
-  const { data, error } = await sb.from("ventas")
-    .select("cliente, nit, saldo_pendiente, valor_factura, n_factura, comercial")
-    .or(orFilter).limit(1).maybeSingle();
+  const consulta = cols => sb.from("ventas").select(cols).or(orFilter).limit(1).maybeSingle();
+  const COLS = "cliente, nit, saldo_pendiente, valor_factura, n_factura, comercial";
+  let { data, error } = await consulta(VENTAS_PLASTICOS.disponible ? COLS + ", es_plasticos" : COLS);
+  if(error && VENTAS_PLASTICOS.disponible){      // la base aún no tiene ventas.es_plasticos (parche v24)
+    VENTAS_PLASTICOS.disponible = false;
+    ({ data, error } = await consulta(COLS));
+  }
   if(error || !data) return null;
   return data;
+}
+
+/* Aviso cuando la factura que se está pagando es una venta de plásticos. */
+function avisoPlasticosHtml(venta){
+  return venta && venta.es_plasticos
+    ? `<span class="badge badge-plastico">Plásticos</span> Esta factura es de plásticos. Si este pago incluye plásticos, marca la casilla "Plásticos" del comprobante.`
+    : "";
+}
+function pintarAvisoPlasticos(el, venta){
+  const html = avisoPlasticosHtml(venta);
+  el.innerHTML = html;
+  el.style.display = html ? "" : "none";
 }
 
 function determinarTipoPago(valorPagado, saldoPendiente){
@@ -1825,6 +1842,7 @@ function modoSinFactura(on){
   document.getElementById("c-cliente").required = !on;
   if(on){
     cFacInput.value = ""; delete cFacInput.dataset.saldoPendiente; document.getElementById("c-fac-status").textContent = "";
+    pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), null);
     cDescuentoTipo.value = ""; cDescuentoTipo.dispatchEvent(new Event("change"));
     cRetencion.value = ""; cDevCantidad.value = ""; cDevValor.value = ""; cDevReferencia.value = "";
     document.getElementById("c-multi-rows").innerHTML = "";
@@ -1920,10 +1938,11 @@ cFacInput.addEventListener("input", () => {
   clearTimeout(tFac);
   tFac = setTimeout(async () => {
     const nfacRaw = cFacInput.value.trim();
-    if(!nfacRaw){ cFacStatus.textContent=""; delete cFacInput.dataset.saldoPendiente; actualizarHintTipoPago(); return; }
+    if(!nfacRaw){ cFacStatus.textContent=""; pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), null); delete cFacInput.dataset.saldoPendiente; actualizarHintTipoPago(); return; }
     cFacStatus.textContent = "Buscando...";
     cFacStatus.className = "hint";
     const data = await buscarVentaPorFactura(nfacRaw);
+    pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), data);
     if(data){
       document.getElementById("c-cliente").value = data.cliente || "";
       if(data.nit) document.getElementById("c-nit").value = data.nit;
@@ -2006,6 +2025,7 @@ function crearFilaMulti(){
       <div class="mf"><label>Referencia de la devolución</label><input type="text" class="mr-dev-ref"></div>
     </div>
     <div class="hint mr-status"></div>
+    <div class="hint mr-plasticos" style="display:none;"></div>
     <div class="hint mr-aplicado"></div>
   `;
   document.getElementById("c-multi-rows").appendChild(row);
@@ -2016,8 +2036,9 @@ function crearFilaMulti(){
     clearTimeout(tRow);
     tRow = setTimeout(async () => {
       const raw = facturaInput.value.trim();
-      if(!raw){ statusEl.textContent=""; delete facturaInput.dataset.saldoPendiente; actualizarFilaMulti(row); actualizarTotalMulti(); return; }
+      if(!raw){ statusEl.textContent=""; pintarAvisoPlasticos(row.querySelector(".mr-plasticos"), null); delete facturaInput.dataset.saldoPendiente; actualizarFilaMulti(row); actualizarTotalMulti(); return; }
       const data = await buscarVentaPorFactura(raw);
+      pintarAvisoPlasticos(row.querySelector(".mr-plasticos"), data);
       if(data){
         facturaInput.value = data.n_factura;
         facturaInput.dataset.saldoPendiente = data.saldo_pendiente;
@@ -2661,6 +2682,7 @@ function limpiarFormularioComprobante(){
   delete document.getElementById("c-valor_total").dataset.tocado;
   actualizarTotalMulti();
   document.getElementById("c-fac-status").textContent = "";
+  pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), null);
   document.getElementById("c-nit-status").textContent = "";
   document.getElementById("c-tipo-pago-hint").textContent = "";
   document.getElementById("c-dev-hint").textContent = "";
@@ -2796,6 +2818,7 @@ async function editarComprobante(id){
   // y el trigger de comisión usen la base correcta al guardar la edición.
   if(fila.n_factura_ref){
     const venta = await buscarVentaPorFactura(fila.n_factura_ref);
+    pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), venta);
     if(venta){
       const aplicadoAntes = (parseFloat(fila.valor_pagado)||0) + (parseFloat(fila.descuento)||0) + (parseFloat(fila.devolucion_valor)||0) + (parseFloat(fila.retencion)||0);
       cFacInput.dataset.saldoPendiente = parseFloat(venta.saldo_pendiente||0) + aplicadoAntes;
