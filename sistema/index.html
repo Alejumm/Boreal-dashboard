@@ -1471,7 +1471,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3994,6 +3994,7 @@ const limpiarTel = x => (x || "").replace(/[^\d+]/g, "");
 const colapsar = x => (x || "").replace(/\s+/g, " ").trim();
 const nullSiVacio = x => { const v = colapsar(x); return v === "" ? null : v; };
 const HINT_DOC = "Si es una sede, usa el mismo NIT con -1, -2… como en los clientes ya cargados (ej.: 900123456-1).";
+const HINT_DOC_EDICION = "Si cambias el documento, también se cambia en sus ventas y pagos y queda un registro del cambio.";
 
 async function cargarCiudadesRuta(){
   const { data } = await sb.from("ciudad_ruta").select("ciudad,ruta,asesor");
@@ -4026,7 +4027,15 @@ let tDocCli;
 async function verificarDocumento(){
   const doc = limpiarDoc(document.getElementById("cli-doc").value);
   const hint = document.getElementById("cli-doc-hint");
-  if(!doc || clienteEditando){ hint.textContent = HINT_DOC; hint.className = "hint"; return null; }
+  if(clienteEditando){
+    // Editando: el documento se puede cambiar. Se avisa qué pasa y si el número nuevo ya lo tiene otro cliente.
+    if(!doc || doc === clienteEditando.numero_documento){ hint.textContent = HINT_DOC_EDICION; hint.className = "hint"; return null; }
+    const { data: otro } = await sb.from("clientes").select("id,nombre_completo").eq("numero_documento", doc).neq("id", clienteEditando.id).limit(1).maybeSingle();
+    if(otro){ hint.textContent = `Ya existe otro cliente con ese documento: ${otro.nombre_completo}. No se puede usar.`; hint.className = "hint lookup-warn"; return otro; }
+    hint.textContent = `Se cambiará de ${clienteEditando.numero_documento} a ${doc} también en sus ventas y pagos, y queda un registro del cambio.`; hint.className = "hint lookup-ok";
+    return null;
+  }
+  if(!doc){ hint.textContent = HINT_DOC; hint.className = "hint"; return null; }
   const tipo = document.getElementById("cli-tipo");
   if(!tipo.value) tipo.value = (/^[89]\d{8,}/.test(doc) ? "NIT" : "CC");
   const { data } = await sb.from("clientes").select("id,nombre_completo,comercial_asignado,estado").eq("numero_documento", doc).limit(1).maybeSingle();
@@ -4071,7 +4080,7 @@ async function editarCliente(id){
   clienteEditando = c;
   const set = (id2, v) => { document.getElementById(id2).value = v ?? ""; };
   set("cli-tipo", c.tipo_documento ? c.tipo_documento.toUpperCase() : "");
-  set("cli-doc", c.numero_documento); document.getElementById("cli-doc").readOnly = true;
+  set("cli-doc", c.numero_documento); document.getElementById("cli-doc").readOnly = false;
   set("cli-nombre", c.nombre_completo);
   if(c.comercial_asignado && ![...document.getElementById("cli-comercial").options].some(o => o.value === c.comercial_asignado)){
     const o = document.createElement("option"); o.value = c.comercial_asignado; o.textContent = c.comercial_asignado; document.getElementById("cli-comercial").appendChild(o);
@@ -4083,7 +4092,7 @@ async function editarCliente(id){
   document.getElementById("cli-titulo").textContent = "Editar cliente";
   document.getElementById("cli-submit").textContent = "Actualizar cliente";
   document.getElementById("cli-cancelar").style.display = "";
-  document.getElementById("cli-doc-hint").textContent = "El documento no se puede cambiar: las ventas y los pagos se enlazan por él.";
+  document.getElementById("cli-doc-hint").textContent = HINT_DOC_EDICION;
   document.getElementById("form-cliente").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 document.addEventListener("click", e => {
@@ -4114,8 +4123,24 @@ document.getElementById("form-cliente").addEventListener("submit", async e => {
     estado: document.getElementById("cli-estado").value || "Activo", tomar_orden_con_cartera: document.getElementById("cli-tomar-orden").checked,
   };
   btn.disabled = true; btn.textContent = "Guardando...";
-  let error = null;
+  let error = null, docCambiado = null;
   if(clienteEditando){
+    if(doc !== clienteEditando.numero_documento){
+      if(await verificarDocumento()){ btn.disabled = false; btn.textContent = textoBtn; msg.textContent = "Ya existe otro cliente con ese documento."; msg.classList.add("err"); return; }
+      if(!confirm(`¿Cambiar el documento de ${nombre}?\n\nDe ${clienteEditando.numero_documento} a ${doc}.\nTambién se cambia en todas sus ventas y pagos, y queda registrado quién lo hizo y cuándo.`)){
+        btn.disabled = false; btn.textContent = textoBtn; return;
+      }
+      const { data: cambio, error: errDoc } = await sb.rpc("cambiar_documento_cliente", { p_id: clienteEditando.id, p_nuevo: doc });
+      if(errDoc){
+        btn.disabled = false; btn.textContent = textoBtn;
+        msg.textContent = /function .*cambiar_documento_cliente|schema cache/i.test(errDoc.message || "")
+          ? "Falta el parche v22 en la base de datos: avisa a quien administra el sistema."
+          : "No se pudo cambiar el documento: " + errDoc.message;
+        msg.classList.add("err"); return;
+      }
+      clienteEditando.numero_documento = doc;
+      docCambiado = cambio;
+    }
     ({ error } = await sb.from("clientes").update(datos).eq("id", clienteEditando.id));
   } else {
     if(await verificarDocumento()){ btn.disabled = false; btn.textContent = textoBtn; msg.textContent = "Ya existe un cliente con ese documento."; msg.classList.add("err"); return; }
@@ -4133,7 +4158,9 @@ document.getElementById("form-cliente").addEventListener("submit", async e => {
   }
   const editando = !!clienteEditando;
   limpiarFormularioCliente();   // limpia también el mensaje: por eso se pone después
-  msg.textContent = editando ? `Cliente actualizado: ${nombre}.` : `Cliente creado: ${nombre}. Ya se puede usar en ventas y comprobantes.`;
+  msg.textContent = editando
+    ? `Cliente actualizado: ${nombre}.` + (docCambiado ? ` Documento cambiado de ${docCambiado.anterior} a ${docCambiado.nuevo} (${docCambiado.ventas} ventas y ${docCambiado.comprobantes} pagos).` : "")
+    : `Cliente creado: ${nombre}. Ya se puede usar en ventas y comprobantes.`;
   msg.className = "msg ok";
   cargarClientes();
 });
