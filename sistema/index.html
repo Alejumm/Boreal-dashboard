@@ -368,6 +368,11 @@
               <label>Recibo de contabilidad</label>
               <input type="text" id="v-recibo_contabilidad" placeholder="N° del recibo">
             </div>
+            <div class="field">
+              <label>Plásticos</label>
+              <label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-weight:500; margin:0; padding:10px 0;">
+                <input type="checkbox" id="v-plasticos"> Esta venta es de plásticos</label>
+            </div>
 
             <details class="advanced">
               <summary>Campos adicionales (opcional)</summary>
@@ -423,6 +428,10 @@
           <div class="field">
             <label>Tipo de documento</label>
             <select id="v-hist-tipo"><option value="">Todos</option><option value="Factura">Factura</option><option value="Remisión">Remisión</option></select>
+          </div>
+          <div class="field">
+            <label>Plásticos</label>
+            <select id="v-hist-pl"><option value="">Todas</option><option value="si">Sí</option><option value="no">No</option></select>
           </div>
           <div class="field">
             <label>Ordenar por</label>
@@ -1472,7 +1481,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2090,6 +2099,7 @@ document.getElementById("c-valor_total").addEventListener("input", (e) => {
 let editandoVentaId = null;
 let abonadoVentaEnEdicion = 0;
 let tipoDocVentaOriginal = null;   // "FVE" o "REM" de la venta que se está editando
+const VENTAS_PLASTICOS = { disponible: true };   // pasa a false si la base aún no tiene ventas.es_plasticos (parche v24)
 
 document.getElementById("form-venta").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -2143,6 +2153,7 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
       retencion: document.getElementById("v-retencion").value ? parseFloat(document.getElementById("v-retencion").value) : null,
       mes_a_aplicar: document.getElementById("v-mes_a_aplicar").value.trim() || null,
       recibo_contabilidad: document.getElementById("v-recibo_contabilidad").value.trim() || null,
+      ...(VENTAS_PLASTICOS.disponible ? { es_plasticos: document.getElementById("v-plasticos").checked } : {}),
       // n_factura, abonado y fuente NO se tocan: ver nota en entrarModoEdicionVenta()
     };
 
@@ -2185,6 +2196,7 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
     retencion: document.getElementById("v-retencion").value ? parseFloat(document.getElementById("v-retencion").value) : null,
     mes_a_aplicar: document.getElementById("v-mes_a_aplicar").value.trim() || null,
     recibo_contabilidad: document.getElementById("v-recibo_contabilidad").value.trim() || null,
+    ...(VENTAS_PLASTICOS.disponible ? { es_plasticos: document.getElementById("v-plasticos").checked } : {}),
   };
 
   const { error } = await sb.from("ventas").insert(payload);
@@ -2273,6 +2285,7 @@ function editarVenta(id){
   document.getElementById("v-retencion").value = fila.retencion ?? "";
   document.getElementById("v-mes_a_aplicar").value = fila.mes_a_aplicar || "";
   document.getElementById("v-recibo_contabilidad").value = fila.recibo_contabilidad || "";
+  document.getElementById("v-plasticos").checked = !!fila.es_plasticos;
   calcularValorSinIva();
 
   document.getElementById("form-venta").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2299,6 +2312,7 @@ async function cargarHistorialVentas(){
   const cliente = document.getElementById("v-hist-cliente").value.trim();
   const comercial = document.getElementById("v-hist-comercial").value;
   const tipoDoc = document.getElementById("v-hist-tipo").value;
+  const plasticos = document.getElementById("v-hist-pl").value;
   const orden = document.getElementById("v-hist-orden").value;
   const desde = document.getElementById("v-hist-desde").value;
   const hasta = document.getElementById("v-hist-hasta").value;
@@ -2307,15 +2321,25 @@ async function cargarHistorialVentas(){
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
     if(comercial) q = q.eq("comercial", comercial);
     if(tipoDoc) q = q.eq("tipo_documento", tipoDoc);
+    if(plasticos && VENTAS_PLASTICOS.disponible) q = q.eq("es_plasticos", plasticos === "si");
     if(desde) q = q.gte("fecha_factura", desde);
     if(hasta) q = q.lte("fecha_factura", hasta);
     return q;
   };
 
-  const consultaFilas = traerFilas(() => filtrar(sb.from("ventas")
-    .select("id,fecha_factura,fecha_despacho,fecha_abono,n_factura,nit,cliente,comercial,ciudad,valor_factura,abonado,estado,nota_credito,referencia_nota_credito,descuento,retencion,mes_a_aplicar,recibo_contabilidad"))
+  const COLS_VENTAS = "id,fecha_factura,fecha_despacho,fecha_abono,n_factura,nit,cliente,comercial,ciudad,valor_factura,abonado,estado,nota_credito,referencia_nota_credito,descuento,retencion,mes_a_aplicar,recibo_contabilidad";
+  const armarConsultaFilas = cols => traerFilas(() => filtrar(sb.from("ventas").select(cols))
     .order(...(orden === "fecha" ? ["fecha_factura", { ascending: false }] : ["n_documento_num", { ascending: false, nullsFirst: false }]))
     .order("id", { ascending: false }), limiteHist.v);
+  const consultaFilas = (async () => {
+    let r = await armarConsultaFilas(VENTAS_PLASTICOS.disponible ? COLS_VENTAS + ",es_plasticos" : COLS_VENTAS);
+    if(r.error && VENTAS_PLASTICOS.disponible){      // la base aún no tiene el parche v24 (plásticos): se trabaja sin eso
+      VENTAS_PLASTICOS.disponible = false;
+      document.getElementById("v-hist-pl").value = "";
+      r = await armarConsultaFilas(COLS_VENTAS);
+    }
+    return r;
+  })();
   const consultaTotal = totalFiltrado(() => filtrar(sb.from("ventas").select("id,valor_factura")), "valor_factura").catch(() => null);
 
   const [{ data, error }, totales] = await Promise.all([consultaFilas, consultaTotal, cargarRecibosCaja()]);
@@ -2336,7 +2360,7 @@ async function cargarHistorialVentas(){
     return;
   }
   tbody.innerHTML = historialVentasCache.map(p => `<tr>
-    <td>${p.fecha_factura}</td><td>${p.fecha_despacho||"—"}</td><td>${p.n_factura}</td><td>${RECIBOS_CAJA[p.n_factura]||"—"}</td><td>${p.recibo_contabilidad||"—"}</td><td>${p.cliente}</td>
+    <td>${p.fecha_factura}</td><td>${p.fecha_despacho||"—"}</td><td>${p.n_factura}${p.es_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td><td>${RECIBOS_CAJA[p.n_factura]||"—"}</td><td>${p.recibo_contabilidad||"—"}</td><td>${p.cliente}</td>
     <td>${p.comercial||"—"}</td><td class="num">${fmtCOP(p.valor_factura)}</td>
     <td><span class="badge ${p.estado==='Pagado'?'badge-pag':'badge-pend'}">${p.estado}</span></td>
     <td class="num">${diasVentaHtml(p)}</td>
@@ -2345,7 +2369,7 @@ async function cargarHistorialVentas(){
 }
 document.getElementById("v-hist-buscar").addEventListener("click", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-comercial").addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
-["v-hist-tipo", "v-hist-orden"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); }));
+["v-hist-tipo", "v-hist-orden", "v-hist-pl"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); }));
 document.getElementById("v-hist-mas").addEventListener("click", () => { limiteHist.v += LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-todo").addEventListener("click", () => { limiteHist.v = 100000; cargarHistorialVentas(); });
 document.getElementById("v-hist-cliente").addEventListener("keydown", e => { if(e.key==="Enter") cargarHistorialVentas(); });
