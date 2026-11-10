@@ -701,7 +701,12 @@
             <label>&nbsp;</label>
             <button type="button" class="btn-submit" id="cart-refresh" style="padding:10px 20px;">Actualizar</button>
           </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="cart-excel" style="padding:10px 20px;background:var(--green);" title="Descarga las facturas que se ven con los filtros actuales">Descargar Excel</button>
+          </div>
         </div>
+        <div class="hint" id="cart-excel-msg" style="margin:-4px 0 8px;"></div>
 
         <div class="totals-strip">
           <div class="total-card accent">
@@ -812,7 +817,8 @@
             </div>
             <div class="field">
               <label>N° Factura *</label>
-              <input type="text" id="cp-n_factura" required>
+              <input type="text" id="cp-n_factura" required placeholder="Solo el número, ej. 5718">
+              <div class="hint" id="cp-fac-status"></div>
             </div>
             <div class="field">
               <label>Valor *</label>
@@ -853,7 +859,8 @@
             </div>
             <div class="field">
               <label>N° Factura referencia</label>
-              <input type="text" id="pp-n_factura" placeholder="Buscar factura del proveedor...">
+              <input type="text" id="pp-n_factura" list="lista-facturas-pp" placeholder="Solo el número, ej. 5718" autocomplete="off">
+              <datalist id="lista-facturas-pp"></datalist>
               <div class="hint" id="pp-fac-status"></div>
             </div>
             <div class="field">
@@ -1452,7 +1459,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2861,12 +2868,12 @@ async function cargarCartera(){
   renderCartera();
 }
 
-function renderCartera(){
+function filtrarCartera(){
   const comercial = document.getElementById("cart-comercial").value;
   const moraMin = parseInt(document.getElementById("cart-mora-min").value) || 0;
   const search = document.getElementById("cart-search").value.trim().toLowerCase();
 
-  let filtrado = carteraCache.filter(r => {
+  return carteraCache.filter(r => {
     if(comercial && r.comercial !== comercial) return false;
     if((r.dias_mora||0) < moraMin) return false;
     if(search){
@@ -2875,6 +2882,10 @@ function renderCartera(){
     }
     return true;
   });
+}
+
+function renderCartera(){
+  const filtrado = filtrarCartera();
 
   const tbody = document.querySelector("#cart-tabla tbody");
   if(filtrado.length === 0){
@@ -2912,6 +2923,72 @@ document.getElementById("cart-refresh").addEventListener("click", cargarCartera)
 ["cart-comercial","cart-mora-min"].forEach(id => document.getElementById(id).addEventListener("change", renderCartera));
 document.getElementById("cart-search").addEventListener("input", renderCartera);
 
+/* ---------- Descargar la cartera en Excel (lo que se ve con los filtros actuales) ---------- */
+const CARTERA_EXCEL = {
+  archivo: "Cartera_Boreal",
+  columnas: [
+    ["Factura", "n_factura", "txt", 12], ["Fecha factura", "fecha_factura", "fecha", 13], ["Fecha despacho", "fecha_despacho", "fecha", 14],
+    ["Cliente", "cliente", "txt", 38], ["NIT", "nit", "txt", 14], ["Teléfono", "telefono", "txt", 14],
+    ["Comercial", "comercial", "txt", 12], ["Ciudad", "ciudad", "txt", 16], ["Ruta", "ruta", "txt", 14],
+    ["Valor factura", "valor_factura", "dinero", 15], ["Abonado", "abonado", "dinero", 15], ["Saldo pendiente", "saldo_pendiente", "dinero", 16],
+    ["Días mora", "dias_mora", "num", 10], ["Estado", "estado", "txt", 12]
+  ]
+};
+let xlsxCargando = null;
+function cargarLibreriaExcel(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(!xlsxCargando) xlsxCargando = new Promise((ok, falla) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    s.onload = () => window.XLSX ? ok(window.XLSX) : falla(new Error("no cargó la librería"));
+    s.onerror = () => { xlsxCargando = null; falla(new Error("no se pudo descargar la librería de Excel (revisa la conexión)")); };
+    document.head.appendChild(s);
+  });
+  return xlsxCargando;
+}
+// "2026-11-08" -> número de fecha de Excel (sin desfase de zona horaria)
+function fechaExcel(t){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t || "");
+  return m ? (Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86400000 : null;
+}
+function hojaCartera(XLSX, filas){
+  const cols = CARTERA_EXCEL.columnas;
+  const ws = XLSX.utils.aoa_to_sheet([cols.map(c => c[0])]);
+  filas.forEach((r, i) => cols.forEach(([, campo, tipo], j) => {
+    const v = r[campo], ref = XLSX.utils.encode_cell({ r: i + 1, c: j });
+    if(v === null || v === undefined || v === "") return;
+    if(tipo === "fecha"){ const f = fechaExcel(String(v)); ws[ref] = f === null ? { t: "s", v: String(v) } : { t: "n", v: f, z: "dd/mm/yyyy" }; }
+    else if(tipo === "dinero" || tipo === "num"){ const n = Number(v); ws[ref] = isNaN(n) ? { t: "s", v: String(v) } : { t: "n", v: n, z: tipo === "dinero" ? "#,##0" : "0" }; }
+    else ws[ref] = { t: "s", v: String(v) };
+  }));
+  const ultima = filas.length;
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ultima, c: cols.length - 1 } });
+  ws["!autofilter"] = { ref: ws["!ref"] };
+  ws["!cols"] = cols.map(c => ({ wch: c[3] }));
+  return ws;
+}
+async function descargarCarteraExcel(){
+  const msg = document.getElementById("cart-excel-msg"), btn = document.getElementById("cart-excel");
+  const filas = filtrarCartera();
+  if(!filas.length){ msg.textContent = "No hay facturas para descargar con esos filtros."; return; }
+  btn.disabled = true; msg.textContent = "Preparando el archivo...";
+  try{
+    const XLSX = await cargarLibreriaExcel();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, hojaCartera(XLSX, filas), "Cartera");
+    const hoy = new Date(), dd = n => String(n).padStart(2, "0");
+    const fecha = `${hoy.getFullYear()}-${dd(hoy.getMonth() + 1)}-${dd(hoy.getDate())}`;
+    const comercial = document.getElementById("cart-comercial").value;
+    const nombre = `${CARTERA_EXCEL.archivo}${comercial ? "_" + comercial.replace(/[^\w-]+/g, "_") : ""}_${fecha}.xlsx`;
+    XLSX.writeFile(wb, nombre);
+    const total = filas.reduce((s, r) => s + (Number(r.saldo_pendiente) || 0), 0);
+    msg.textContent = `Se descargó ${nombre}: ${filas.length} facturas, saldo ${fmtCOP(total)}.`;
+  } catch(e){
+    msg.textContent = "No se pudo generar el Excel: " + e.message;
+  } finally { btn.disabled = false; }
+}
+document.getElementById("cart-excel").addEventListener("click", descargarCarteraExcel);
+
 /* ============================================================
    PROVEEDORES: datalist de autocompletado
    ============================================================ */
@@ -2939,10 +3016,17 @@ document.getElementById("form-compra").addEventListener("submit", async (e) => {
   const valor = parseFloat(document.getElementById("cp-valor").value) || 0;
   const abono = parseFloat(document.getElementById("cp-abono").value) || 0;
 
+  const nuevaFac = await completarFacturaNueva();
+  if(nuevaFac.duplicada){
+    btn.disabled = false; btn.textContent = "Guardar compra";
+    msg.textContent = "Esa factura ya está registrada para este proveedor (" + nuevaFac.duplicada.n_factura + ").";
+    msg.classList.add("err");
+    return;
+  }
   const payload = {
     fecha,
     proveedor: document.getElementById("cp-proveedor").value.trim(),
-    n_factura: document.getElementById("cp-n_factura").value.trim(),
+    n_factura: nuevaFac.n_factura,
     valor,
     vencimiento: document.getElementById("cp-vencimiento").value || null,
     abono,
@@ -2959,15 +3043,47 @@ document.getElementById("form-compra").addEventListener("submit", async (e) => {
     msg.classList.add("err");
     return;
   }
-  msg.textContent = "Compra guardada correctamente.";
+  olvidarFacturasProv();
+  msg.textContent = "Compra guardada correctamente (" + payload.n_factura + ").";
   msg.classList.add("ok");
-  limpiarFormularioCompra();
+  limpiarFormularioCompra(true);
   cargarCarteraProveedores();
 });
 
-function limpiarFormularioCompra(){
+/* Factura nueva: si escriben solo el número (5718) se completa con el prefijo del proveedor (CASF 5718). */
+async function completarFacturaNueva(){
+  const prov = document.getElementById("cp-proveedor").value.trim();
+  let nf = document.getElementById("cp-n_factura").value.trim();
+  const facs = prov ? await facturasDeProveedor(prov) : [];
+  let prefijo = null;
+  if(/^\d+$/.test(nf)){
+    prefijo = prefijoHabitual(facs);
+    if(prefijo) nf = prefijo + nf;
+  }
+  const duplicada = facs.find(f => normFactura(f.n_factura) === normFactura(nf)) || null;
+  return { n_factura: nf, prefijo, duplicada };
+}
+let tCpFac;
+async function pintarFacturaNueva(){
+  const st = document.getElementById("cp-fac-status");
+  const nf = document.getElementById("cp-n_factura").value.trim();
+  if(!nf){ st.textContent = ""; st.className = "hint"; return; }
+  if(!document.getElementById("cp-proveedor").value.trim()){ st.textContent = "Elige el proveedor para completar el prefijo."; st.className = "hint"; return; }
+  const r = await completarFacturaNueva();
+  if(r.duplicada){ st.textContent = "Ya existe " + r.duplicada.n_factura + " de este proveedor."; st.className = "lookup-warn"; }
+  else if(r.prefijo){ st.textContent = "Se guardará como " + r.n_factura; st.className = "lookup-ok"; }
+  else { st.textContent = ""; st.className = "hint"; }
+}
+["cp-n_factura", "cp-proveedor"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => { clearTimeout(tCpFac); tCpFac = setTimeout(pintarFacturaNueva, 400); });
+  document.getElementById(id).addEventListener("change", pintarFacturaNueva);
+});
+
+function limpiarFormularioCompra(conservarMsg){
   document.getElementById("form-compra").reset();
+  document.getElementById("cp-fac-status").textContent = "";
   document.getElementById("cp-abono").value = 0;
+  if(conservarMsg === true) return;   // tras guardar se deja visible el mensaje de éxito
   document.getElementById("cp-msg").textContent = "";
   document.getElementById("cp-msg").className = "msg";
 }
@@ -2976,32 +3092,95 @@ document.getElementById("cp-limpiar").addEventListener("click", limpiarFormulari
 /* ============================================================
    FORM: PAGO A PROVEEDOR
    ============================================================ */
+/* ---- Facturas de un proveedor: se escribe solo el número (5718) y el sistema entiende CASF 5718 ---- */
+const normFactura = s => String(s || "").toUpperCase().replace(/[\s\-_.]+/g, "");   // "CASF 5718" y "casf5718" son la misma
+const soloDigitos = s => String(s || "").replace(/\D/g, "");
+const _facturasProvCache = {};   // proveedor (minúsculas) -> lista de { n_factura, saldo, valor }
+async function facturasDeProveedor(nombre){
+  const k = String(nombre || "").trim().toLowerCase();
+  if(!k) return [];
+  if(_facturasProvCache[k]) return _facturasProvCache[k];
+  const { data, error } = await sb.from("compras_proveedores").select("n_factura,saldo,valor,proveedor")
+    .ilike("proveedor", String(nombre).trim().replace(/[%_]/g, m => "\\" + m)).order("fecha", { ascending: false }).limit(1000);
+  if(error) return [];
+  _facturasProvCache[k] = data || [];
+  return _facturasProvCache[k];
+}
+const olvidarFacturasProv = () => { Object.keys(_facturasProvCache).forEach(k => delete _facturasProvCache[k]); };
+/* Prefijo habitual del proveedor (CASF + espacio si así las escriben casi siempre), sacado de sus facturas ya registradas. */
+function prefijoHabitual(facturas){
+  const cuenta = {};
+  facturas.forEach(f => {
+    const m = /^\s*([A-Za-zÁÉÍÓÚÑ]+)([\s\-_.]*)\d+\s*$/.exec(f.n_factura || "");
+    if(!m) return;
+    const k = m[1].toUpperCase() + "|" + (m[2] ? " " : "");
+    cuenta[k] = (cuenta[k] || 0) + 1;
+  });
+  const top = Object.entries(cuenta).sort((a, b) => b[1] - a[1]);
+  if(!top.length) return null;
+  const letras = new Set(top.map(([k]) => k.split("|")[0]));
+  if(letras.size > 1) return null;     // el proveedor usa varios prefijos: no se adivina
+  const [pref, sep] = top[0][0].split("|");
+  return pref + sep;
+}
+/* Convierte lo escrito en la factura registrada: exacta, o por el número solo. */
+function resolverFactura(texto, facturas){
+  const t = String(texto || "").trim();
+  if(!t) return { tipo: "vacio" };
+  const exacta = facturas.find(f => normFactura(f.n_factura) === normFactura(t));
+  if(exacta) return { tipo: "ok", factura: exacta };
+  const d = soloDigitos(t);
+  if(d && /^\d+$/.test(t)){
+    const cand = facturas.filter(f => soloDigitos(f.n_factura).replace(/^0+/, "") === d.replace(/^0+/, ""));
+    const pend = cand.filter(f => (parseFloat(f.saldo) || 0) > 0.5);
+    const lista = pend.length ? pend : cand;
+    if(lista.length === 1) return { tipo: "ok", factura: lista[0] };
+    if(lista.length > 1) return { tipo: "varias", candidatas: lista };
+  }
+  return { tipo: "no" };
+}
+
 const ppFacInput = document.getElementById("pp-n_factura");
 const ppFacStatus = document.getElementById("pp-fac-status");
+const ppProvInput = document.getElementById("pp-proveedor");
 let tPpFac;
-ppFacInput.addEventListener("input", () => {
-  clearTimeout(tPpFac);
-  tPpFac = setTimeout(async () => {
-    const nfac = ppFacInput.value.trim();
-    const proveedor = document.getElementById("pp-proveedor").value.trim();
-    if(!nfac){ ppFacStatus.textContent=""; delete ppFacInput.dataset.saldo; return; }
-    ppFacStatus.textContent = "Buscando...";
-    ppFacStatus.className = "hint";
-    let query = sb.from("compras_proveedores").select("proveedor, n_factura, saldo, valor").eq("n_factura", nfac);
-    if(proveedor) query = query.eq("proveedor", proveedor);
-    const { data, error } = await query.limit(1).maybeSingle();
-    if(!error && data){
-      document.getElementById("pp-proveedor").value = data.proveedor;
-      ppFacInput.dataset.saldo = data.saldo;
-      ppFacStatus.textContent = `Factura encontrada · Saldo pendiente: ${fmtCOP(data.saldo)}`;
-      ppFacStatus.className = "lookup-ok";
-    } else {
-      delete ppFacInput.dataset.saldo;
-      ppFacStatus.textContent = "No se encontró esa factura — se guardará igual, sin vincular saldo.";
-      ppFacStatus.className = "lookup-warn";
-    }
-  }, 450);
-});
+async function cargarOpcionesFacturasPP(){
+  const lista = document.getElementById("lista-facturas-pp");
+  const facs = (await facturasDeProveedor(ppProvInput.value)).filter(f => (parseFloat(f.saldo) || 0) > 0.5);
+  lista.innerHTML = facs.map(f => `<option value="${escapar(f.n_factura)}">Saldo ${fmtCOP(f.saldo)}</option>`).join("");
+}
+async function buscarFacturaPP(){
+  const nfac = ppFacInput.value.trim();
+  const proveedor = ppProvInput.value.trim();
+  if(!nfac){ ppFacStatus.textContent = ""; delete ppFacInput.dataset.saldo; return; }
+  if(!proveedor){
+    delete ppFacInput.dataset.saldo;
+    ppFacStatus.textContent = "Primero elige el proveedor y luego escribe solo el número de la factura.";
+    ppFacStatus.className = "lookup-warn";
+    return;
+  }
+  ppFacStatus.textContent = "Buscando..."; ppFacStatus.className = "hint";
+  const facs = await facturasDeProveedor(proveedor);
+  const r = resolverFactura(nfac, facs);
+  if(r.tipo === "ok"){
+    ppFacInput.dataset.saldo = r.factura.saldo;
+    if(r.factura.proveedor) ppProvInput.value = r.factura.proveedor;
+    ppFacStatus.textContent = `Factura ${r.factura.n_factura} · Saldo pendiente: ${fmtCOP(r.factura.saldo)}`;
+    ppFacStatus.className = "lookup-ok";
+  } else if(r.tipo === "varias"){
+    delete ppFacInput.dataset.saldo;
+    ppFacStatus.textContent = "Hay varias facturas con ese número (" + r.candidatas.map(f => f.n_factura).join(", ") + "): escribe también las letras.";
+    ppFacStatus.className = "lookup-warn";
+  } else {
+    delete ppFacInput.dataset.saldo;
+    ppFacStatus.textContent = "No se encontró esa factura de " + proveedor + " — se guardará igual, sin vincular saldo.";
+    ppFacStatus.className = "lookup-warn";
+  }
+}
+ppFacInput.addEventListener("input", () => { clearTimeout(tPpFac); tPpFac = setTimeout(buscarFacturaPP, 400); });
+ppFacInput.addEventListener("change", buscarFacturaPP);
+ppProvInput.addEventListener("input", () => { clearTimeout(tPpFac); tPpFac = setTimeout(() => { cargarOpcionesFacturasPP(); if(ppFacInput.value.trim()) buscarFacturaPP(); }, 400); });
+ppProvInput.addEventListener("change", () => { cargarOpcionesFacturasPP(); if(ppFacInput.value.trim()) buscarFacturaPP(); });
 
 document.getElementById("form-pago-prov").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -3014,7 +3193,11 @@ document.getElementById("form-pago-prov").addEventListener("submit", async (e) =
   const payload = {
     fecha_pago,
     proveedor: document.getElementById("pp-proveedor").value.trim(),
-    n_factura: ppFacInput.value.trim() || null,
+    n_factura: (() => {
+      const t = ppFacInput.value.trim(); if(!t) return null;
+      const r = resolverFactura(t, _facturasProvCache[document.getElementById("pp-proveedor").value.trim().toLowerCase()] || []);
+      return r.tipo === "ok" ? r.factura.n_factura : t;   // número solo -> factura completa; si no se encuentra, como la escribieron
+    })(),
     valor_pagado: parseFloat(document.getElementById("pp-valor_pagado").value) || 0,
     estado: document.getElementById("pp-estado").value || null,
     observaciones: document.getElementById("pp-observaciones").value.trim() || null,
@@ -3028,6 +3211,7 @@ document.getElementById("form-pago-prov").addEventListener("submit", async (e) =
     msg.classList.add("err");
     return;
   }
+  olvidarFacturasProv();
   msg.textContent = "Pago guardado. Si la factura referenciada existe, su saldo ya fue actualizado.";
   msg.classList.add("ok");
   limpiarFormularioPagoProv();
