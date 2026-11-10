@@ -317,6 +317,7 @@
                 <option value="FVE">Factura (FVE-)</option>
                 <option value="REM">Remisión (numérico)</option>
               </select>
+              <div class="hint" id="v-tipo-hint"></div>
             </div>
             <div class="field">
               <label>N° Factura / Remisión *</label>
@@ -1471,7 +1472,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2088,6 +2089,7 @@ document.getElementById("c-valor_total").addEventListener("input", (e) => {
    ============================================================ */
 let editandoVentaId = null;
 let abonadoVentaEnEdicion = 0;
+let tipoDocVentaOriginal = null;   // "FVE" o "REM" de la venta que se está editando
 
 document.getElementById("form-venta").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -2102,6 +2104,24 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
   /* ---- Modo edición: UPDATE sobre una venta existente ---- */
   if(editandoVentaId !== null){
     btn.disabled = true; btn.textContent = "Actualizando...";
+
+    // Cambio de factura <-> remisión: primero la función de la base (cambia el número y el valor sin IVA, y deja registro)
+    if(!vTipoDoc.disabled && tipoDocVentaOriginal && vTipoDoc.value !== tipoDocVentaOriginal){
+      const quedaComo = normalizarFactura(vTipoDoc.value, vNFactura.value);
+      if(!confirm(`¿Cambiar esta venta de ${tipoDocVentaOriginal === "FVE" ? "factura a remisión" : "remisión a factura"}?\n\nEl número pasará a ${quedaComo}` +
+                  (vTipoDoc.value === "FVE" ? " y el valor sin IVA se calculará con el 19 %." : " y quedará sin IVA.") + "\nQueda registrado quién lo hizo y cuándo.")){
+        btn.disabled = false; btn.textContent = "Actualizar venta"; return;
+      }
+      const { error: errTipo } = await sb.rpc("cambiar_tipo_documento_venta", { p_id: editandoVentaId, p_tipo: vTipoDoc.value });
+      if(errTipo){
+        btn.disabled = false; btn.textContent = "Actualizar venta";
+        msg.textContent = /function .*cambiar_tipo_documento_venta|schema cache/i.test(errTipo.message || "")
+          ? "Falta el parche v23 en la base de datos: avisa a quien administra el sistema."
+          : "No se pudo cambiar el tipo de documento: " + errTipo.message;
+        msg.classList.add("err"); return;
+      }
+      tipoDocVentaOriginal = vTipoDoc.value;   // ya cambió en la base; si falla lo siguiente, no se repite
+    }
 
     const nuevoSaldo = Math.max(valor_factura - abonadoVentaEnEdicion, 0);
     const estadoSeleccionado = document.getElementById("v-estado").value;
@@ -2203,7 +2223,12 @@ function entrarModoEdicionVenta(){
   // N° Factura y abonado no se editan aquí: cambiar la factura rompería el
   // enlace con los comprobantes ya registrados contra ese número, y el abonado
   // lo controla exclusivamente el historial de comprobantes, no este formulario.
-  vTipoDoc.disabled = true;
+  // El tipo (factura / remisión) sí se puede cambiar, pero solo si la venta no tiene pagos: lo hace la función cambiar_tipo_documento_venta (parche v23).
+  const conPagos = abonadoVentaEnEdicion > 0;
+  vTipoDoc.disabled = conPagos;
+  document.getElementById("v-tipo-hint").textContent = conPagos
+    ? "Tiene pagos registrados: no se puede cambiar entre factura y remisión."
+    : "Puedes cambiar entre factura y remisión (solo si no tiene pagos). El número se mantiene.";
   vNFactura.disabled = true;
   document.getElementById("v-abonado").disabled = true;
 }
@@ -2215,6 +2240,7 @@ function salirModoEdicionVenta(){
   vTipoDoc.disabled = false;
   vNFactura.disabled = false;
   document.getElementById("v-abonado").disabled = false;
+  document.getElementById("v-tipo-hint").textContent = "";
   limpiarFormularioVenta();
 }
 document.getElementById("v-cancelar-edicion").addEventListener("click", salirModoEdicionVenta);
@@ -2231,6 +2257,7 @@ function editarVenta(id){
   document.getElementById("v-fecha_factura").value = fila.fecha_factura || "";
   document.getElementById("v-fecha_despacho").value = fila.fecha_despacho || "";
   vTipoDoc.value = /^FVE-?/i.test(fila.n_factura||"") ? "FVE" : "REM";
+  tipoDocVentaOriginal = vTipoDoc.value;
   vNFactura.value = quitarPrefijoFactura(fila.n_factura);
   actualizarPreviewFactura();
   document.getElementById("v-nit").value = fila.nit || "";
