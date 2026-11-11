@@ -173,6 +173,8 @@
   .t-rojo{ background:#FBE9E7; color:#A32D2D; }
   .dash-dos{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
   .dash-sub-h{ font-family:'Oswald',sans-serif; font-size:13px; margin:0 0 10px; color:var(--steel-900); }
+  .dash-periodo{ display:inline-block; padding:7px 12px; margin-bottom:6px; background:var(--steel-900); color:#fff; font-size:12.5px; border-left:4px solid var(--orange); }
+  .dash-periodo.abierto{ border-left-color:var(--green); }
   .ger-btns{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
   .ger-btn{ padding:6px 14px; font-size:12px; background:var(--steel-100); color:var(--steel-800); border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em; }
   .ger-btn.activo{ background:var(--steel-900); color:#fff; border-color:var(--steel-900); }
@@ -1348,7 +1350,10 @@
             <label>&nbsp;</label>
             <button type="button" class="btn-submit" id="dash-refresh" style="padding:10px 20px;">Actualizar</button>
           </div>
-          <div class="field grow"><div class="hint" id="dash-nota"></div></div>
+          <div class="field grow">
+            <div id="dash-periodo" class="dash-periodo"></div>
+            <div class="hint" id="dash-nota"></div>
+          </div>
         </div>
 
         <div class="dash-grid">
@@ -1464,11 +1469,29 @@
         </div>
       </div>
 
+      <div class="panel" id="cierres-panel">
+        <h3 class="dash-sub-h">Cierres de mes</h3>
+        <div class="hint" style="margin-bottom:10px;">Cada mes va desde el día siguiente al cierre del mes anterior hasta su fecha de cierre (inclusive). Las tarjetas del Dashboard, la tabla por comercial y el Panel de gerencia usan estas fechas. Un mes sin cierre registrado se cuenta como mes calendario.</div>
+        <div class="table-wrap">
+          <table id="cierres-tabla">
+            <thead><tr><th>Mes</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Registrado por</th></tr></thead>
+            <tbody><tr><td colspan="5" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="filters" style="margin-top:12px;">
+          <div class="field"><label>Mes a cerrar</label><select id="cierre-mes"></select></div>
+          <div class="field"><label>Fecha de cierre (último día de ese mes)</label><input type="date" id="cierre-fecha"></div>
+          <div class="field"><label>&nbsp;</label><button type="button" class="btn-submit" id="cierre-guardar" style="padding:10px 20px;">Cerrar mes</button></div>
+          <div class="field grow"><div class="hint" id="cierre-hint" style="margin-top:26px;"></div></div>
+        </div>
+        <div class="msg" id="cierre-msg"></div>
+      </div>
+
       <div class="panel">
         <h3 class="dash-sub-h" id="d-com-titulo">Cartera, ventas y recaudo por comercial</h3>
         <div class="table-wrap">
           <table id="d-comercial">
-            <thead><tr><th>Comercial</th><th class="num">Cartera</th><th class="num">Pres. diario cartera</th><th class="num">Ventas año anterior</th><th class="num">Pres. diario ventas</th><th class="num">Ventas del mes</th><th class="num">Ventas / pres.</th><th class="num">Recaudo del mes</th><th class="num">Recaudo / cartera</th></tr></thead>
+            <thead><tr><th>Comercial</th><th class="num">Cartera</th><th class="num">Pres. diario cartera</th><th class="num">Ventas año anterior (sin IVA)</th><th class="num">Pres. diario ventas</th><th class="num">Ventas del mes (sin IVA)</th><th class="num">Ventas / pres.</th><th class="num">Recaudo del mes</th><th class="num">Recaudo / cartera</th></tr></thead>
             <tbody><tr><td colspan="9" class="empty-state">Cargando...</td></tr></tbody>
           </table>
         </div>
@@ -1574,7 +1597,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -4147,23 +4170,56 @@ async function verificarAccesoDashboard(){
   if(historialComprobantesCache.length) pintarHistorialComprobantes();
 }
 
+/* ---- Cierres de mes (parche v28): el mes comercial va del día siguiente al cierre anterior hasta su fecha de cierre ---- */
+const COM_RPC = { nombre: "dashboard_por_comercial_periodo" };   // pasa a la función anterior si la base aún no tiene el parche v28
+const fechaLarga = iso => { if(!iso) return "—"; const [a, m, d] = String(iso).slice(0, 10).split("-").map(Number); return `${d} ${MESES[m - 1].slice(0, 3).toLowerCase()} ${a}`; };
+const sumarDias = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return isoLocal(d); };
+async function cargarCierresMes(){
+  const { data, error } = await sb.from("cierres_mes").select("mes,fecha_cierre,creado_por,actualizado_por").order("mes", { ascending: true });
+  return error ? null : (data || []);     // null = la base aún no tiene la tabla
+}
+/* Período (inicio, fin, cerrado) de un mes según la lista de cierres; igual que periodo_mes de la base. */
+function periodoDeMes(mesISO, cierres){
+  const m = mesISO.slice(0, 7) + "-01";
+  const ant = new Date(m + "T00:00:00"); ant.setMonth(ant.getMonth() - 1);
+  const cM = (cierres || []).find(c => c.mes === m), cPrev = (cierres || []).find(c => c.mes === isoLocal(ant));
+  const inicio = cPrev ? sumarDias(cPrev.fecha_cierre, 1) : m;
+  if(cM) return { inicio, fin: cM.fecha_cierre, cerrado: true };
+  if(cPrev) return { inicio, fin: null, cerrado: false };
+  const f = new Date(m + "T00:00:00"); f.setMonth(f.getMonth() + 1); f.setDate(0);
+  return { inicio, fin: isoLocal(f), cerrado: false };
+}
+const mesAbiertoDe = cierres => {     // "YYYY-MM" del mes que sigue al último cerrado
+  if(!cierres || !cierres.length) return null;
+  const d = new Date(cierres[cierres.length - 1].mes + "T00:00:00"); d.setMonth(d.getMonth() + 1);
+  return isoLocal(d).slice(0, 7);
+};
+const textoPeriodo = p => `${fechaLarga(p.inicio)} – ${p.fin ? fechaLarga(p.fin) : "hoy"}`;
+
 async function cargarDashboard(){
   const inp = document.getElementById("dash-mes");
   const hoyMes = hoyISO().slice(0, 7);
-  if(!inp.value) inp.value = hoyMes;
+  const cierres = await cargarCierresMes();
+  pintarCierres(cierres);
+  const mesAbierto = mesAbiertoDe(cierres) || hoyMes;      // el mes en curso es el que aún no se ha cerrado
+  if(!inp.value) inp.value = mesAbierto;
   const mesISO = inp.value + "-01";
   const [anio, mesNum] = inp.value.split("-").map(Number);
-  const etiqueta = inp.value === hoyMes ? "mes actual" : `${MESES[mesNum - 1].toLowerCase()} ${anio}`;
+  const etiqueta = inp.value === mesAbierto ? "mes actual" : `${MESES[mesNum - 1].toLowerCase()} ${anio}`;
   const nota = document.getElementById("dash-nota");
   nota.textContent = "Cargando...";
   document.getElementById("dash-titulo").textContent = `${EMPRESA.nombre} — Dashboard operativo ${anio}`;
 
-  const [rk, rf, rc, rm] = await Promise.all([
+  const pedirComercial = () => sb.rpc(COM_RPC.nombre, { p_mes: mesISO });
+  let [rk, rf, rc, rm] = await Promise.all([
     sb.rpc("dashboard_kpis", { p_mes: mesISO, p_dias_alerta: EMPRESA.diasAlertaVencida }),
     sb.from("cartera").select("n_factura,cliente,saldo_pendiente,comercial,fecha_factura,dias_mora").order("saldo_pendiente", { ascending: false }).limit(5),
     sb.from("cartera_por_cliente").select("*").order("saldo_total", { ascending: false }).limit(5),
-    sb.rpc("dashboard_por_comercial", { p_mes: mesISO }),
+    pedirComercial(),
   ]);
+  if(rm.error && COM_RPC.nombre === "dashboard_por_comercial_periodo" && /function|schema cache/i.test(rm.error.message || "")){
+    COM_RPC.nombre = "dashboard_por_comercial"; rm = await pedirComercial();      // base sin el parche v28
+  }
   const fallo = [rk, rf, rc, rm].find(r => r.error);
   if(fallo){
     if(fallo.error.code === "42501" || /No autorizado/i.test(fallo.error.message || "")){
@@ -4177,21 +4233,31 @@ async function cargarDashboard(){
   const k = rk.data || {};
   const n = x => parseFloat(x) || 0;
 
+  // Período del mes elegido: el que devuelve la base (con cierres) o, si la base aún no tiene el parche v28, el mes calendario
+  const conCierres = k.periodo_inicio !== undefined;
+  const periodo = conCierres ? { inicio: k.periodo_inicio, fin: k.periodo_fin, cerrado: !!k.periodo_cerrado } : periodoDeMes(mesISO, null);
+  const rangoTxt = textoPeriodo(periodo);
+  const chip = document.getElementById("dash-periodo");
+  chip.className = "dash-periodo" + (periodo.cerrado ? "" : " abierto");
+  chip.textContent = conCierres
+    ? `Período de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${rangoTxt} · ${periodo.cerrado ? "cerrado" : "abierto"}`
+    : `Mes calendario de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${rangoTxt} (la base aún no tiene los cierres de mes)`;
+
   const set = (id, txt) => { document.getElementById(id).textContent = txt; };
   set("d-cartera", fmtCOP(n(k.cartera_total)));
   set("d-cartera-sub", `${k.clientes_mora} clientes en mora · ${k.cartera_facturas} facturas · ${k.cartera_clientes} clientes`);
-  set("d-ventas-label", `Ventas ${etiqueta}`);
+  set("d-ventas-label", `Ventas ${etiqueta}${conCierres ? " (sin IVA)" : ""}`);
   set("d-ventas", fmtCOP(n(k.ventas_mes_valor)));
-  set("d-ventas-sub", `${k.ventas_mes_facturas} facturas`);
+  set("d-ventas-sub", `${k.ventas_mes_facturas} facturas · ${rangoTxt}`);
   set("d-recaudo-label", `Recaudo ${etiqueta}`);
   set("d-recaudo", fmtCOP(n(k.recaudo_mes)));
-  set("d-recaudo-sub", `${k.recaudo_mes_n} abonos registrados`);
+  set("d-recaudo-sub", `${k.recaudo_mes_n} abonos registrados · ${rangoTxt}`);
   set("d-pprov-label", `Abonos proveedores ${etiqueta}`);
   set("d-pprov", fmtCOP(n(k.pagos_prov_mes)));
-  set("d-pprov-sub", `${k.pagos_prov_mes_n} pagos a proveedores registrados`);
+  set("d-pprov-sub", `${k.pagos_prov_mes_n} pagos a proveedores registrados · ${rangoTxt}`);
   set("d-gastos-label", `Gastos ${etiqueta}`);
   set("d-gastos", fmtCOP(n(k.gastos_mes)));
-  set("d-gastos-sub", `${k.gastos_mes_n} gastos registrados`);
+  set("d-gastos-sub", `${k.gastos_mes_n} gastos registrados · ${rangoTxt}`);
   const saldoBancos = n(k.saldo_bancos);
   set("d-bancos", (saldoBancos < 0 ? "−" : "") + fmtCOP(Math.abs(saldoBancos)));
   set("d-bancos-sub", "Saldo inicial + recaudos − pagos a proveedores − gastos" +
@@ -4235,11 +4301,70 @@ async function cargarDashboard(){
       <td class="num">${tot.ant ? pct0(tot.ventas / tot.ant) : "—"}</td><td class="num">${fmtCOP(tot.recaudo)}</td><td class="num">${tot.cartera ? pct0(tot.recaudo / tot.cartera) : "—"}</td></tr>`;
   document.querySelector("#d-comercial tbody").innerHTML = filas.length === 0
     ? `<tr><td colspan="9" class="empty-state">Sin comerciales activos.</td></tr>` : cuerpo + filaTotal;
-  document.getElementById("d-com-titulo").textContent = `Cartera, ventas y recaudo por comercial — ${MESES[mesNum - 1].toLowerCase()} ${anio}`;
+  document.getElementById("d-com-titulo").textContent = `Cartera, ventas y recaudo por comercial — ${MESES[mesNum - 1].toLowerCase()} ${anio} (${rangoTxt})`;
   nota.textContent = `Actualizado ${new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}. Cartera y saldo en bancos son acumulados a hoy; el resto corresponde al mes elegido.`;
-  cargarPanelGerencia(mesISO, anio, mesNum, filas);   // sin esperar: el panel de gerencia se llena aparte
+  cargarPanelGerencia(mesISO, anio, mesNum, filas, periodo, conCierres);   // sin esperar: el panel de gerencia se llena aparte
 }
 document.getElementById("dash-refresh").addEventListener("click", cargarDashboard);
+
+/* ---- Panel "Cierres de mes": ver las fechas de cada mes y cerrar el mes (solo quien ve el Dashboard) ---- */
+let CIERRES = [];
+const etiquetaMesCierre = iso => `${MESES_LABEL[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+function pintarCierres(cierres){
+  const panel = document.getElementById("cierres-panel");
+  if(cierres === null){ panel.style.display = "none"; return; }        // la base aún no tiene el parche v28
+  panel.style.display = "";
+  CIERRES = cierres;
+  const abierto = mesAbiertoDe(cierres);                                 // "YYYY-MM" del mes que sigue al último cerrado
+  const filas = [...cierres].reverse().map(c => {
+    const p = periodoDeMes(c.mes, cierres);
+    return `<tr><td>${escapar(etiquetaMesCierre(c.mes))}</td><td>${fechaLarga(p.inicio)}</td><td>${fechaLarga(p.fin)}</td><td>Cerrado</td><td>${escapar(c.actualizado_por || c.creado_por || "—")}</td></tr>`;
+  });
+  if(abierto){
+    const p = periodoDeMes(abierto + "-01", cierres);
+    filas.unshift(`<tr style="background:#E0F2EC;"><td><strong>${escapar(etiquetaMesCierre(abierto + "-01"))}</strong></td><td>${fechaLarga(p.inicio)}</td><td>abierto (hasta hoy)</td><td><strong>Abierto</strong></td><td>—</td></tr>`);
+  }
+  document.querySelector("#cierres-tabla tbody").innerHTML = filas.length ? filas.join("") : `<tr><td colspan="5" class="empty-state">Aún no hay cierres registrados.</td></tr>`;
+  // Qué mes se puede cerrar: el abierto, o corregir el último cerrado
+  const sel = document.getElementById("cierre-mes");
+  const opciones = [];
+  if(abierto) opciones.push({ v: abierto + "-01", t: `${etiquetaMesCierre(abierto + "-01")} (abierto)` });
+  if(cierres.length) opciones.push({ v: cierres[cierres.length - 1].mes, t: `${etiquetaMesCierre(cierres[cierres.length - 1].mes)} (corregir el cierre)` });
+  if(!opciones.length){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); opciones.push({ v: isoLocal(d), t: etiquetaMesCierre(isoLocal(d)) }); }
+  sel.innerHTML = opciones.map(o => `<option value="${o.v}">${escapar(o.t)}</option>`).join("");
+  document.getElementById("cierre-fecha").max = hoyISO();
+  actualizarHintCierre();
+}
+function actualizarHintCierre(){
+  const hint = document.getElementById("cierre-hint"), mes = document.getElementById("cierre-mes").value, fecha = document.getElementById("cierre-fecha").value;
+  if(!mes){ hint.textContent = ""; return; }
+  const p = periodoDeMes(mes, CIERRES);
+  hint.textContent = fecha
+    ? `${etiquetaMesCierre(mes)} irá del ${fechaLarga(p.inicio)} al ${fechaLarga(fecha)} y el mes siguiente empezará el ${fechaLarga(sumarDias(fecha, 1))}.`
+    : `${etiquetaMesCierre(mes)} empieza el ${fechaLarga(p.inicio)}. Escribe el último día de ese mes (la fecha de cierre).`;
+}
+["cierre-mes", "cierre-fecha"].forEach(id => document.getElementById(id).addEventListener("input", actualizarHintCierre));
+document.getElementById("cierre-guardar").addEventListener("click", async () => {
+  const msg = document.getElementById("cierre-msg"), btn = document.getElementById("cierre-guardar");
+  msg.textContent = ""; msg.className = "msg";
+  const mes = document.getElementById("cierre-mes").value, fecha = document.getElementById("cierre-fecha").value;
+  if(!mes || !fecha){ msg.textContent = "Elige el mes y escribe la fecha de cierre."; msg.classList.add("err"); return; }
+  if(fecha > hoyISO()){ msg.textContent = "La fecha de cierre no puede ser futura."; msg.classList.add("err"); return; }
+  const p = periodoDeMes(mes, CIERRES);
+  if(fecha < p.inicio){ msg.textContent = `El cierre no puede ser anterior al inicio del mes (${fechaLarga(p.inicio)}).`; msg.classList.add("err"); return; }
+  if(!confirm(`¿Cerrar ${etiquetaMesCierre(mes)} el ${fechaLarga(fecha)}?\n\n${etiquetaMesCierre(mes)} irá del ${fechaLarga(p.inicio)} al ${fechaLarga(fecha)} y el mes siguiente empezará el ${fechaLarga(sumarDias(fecha, 1))}.\nCambian las ventas, el recaudo, los abonos a proveedores y los gastos de cada mes en el Dashboard. Queda registrado quién lo hizo.`)) return;
+  btn.disabled = true;
+  const { error } = await sb.rpc("registrar_cierre_mes", { p_mes: mes, p_fecha_cierre: fecha });
+  btn.disabled = false;
+  if(error){
+    msg.textContent = /function .*registrar_cierre_mes|schema cache/i.test(error.message || "") ? "Falta el parche v28 en la base de datos: avisa a quien administra el sistema." : "No se pudo cerrar el mes: " + error.message;
+    msg.classList.add("err"); return;
+  }
+  document.getElementById("cierre-fecha").value = "";
+  document.getElementById("dash-mes").value = "";             // vuelve al mes abierto
+  await cargarDashboard();
+  const m2 = document.getElementById("cierre-msg"); m2.textContent = `${etiquetaMesCierre(mes)} cerrado el ${fechaLarga(fecha)}.`; m2.className = "msg ok";
+});
 
 /* ============================================================
    PANEL DE GERENCIA (lo que tenía el antiguo gerente.html, ahora con los datos reales de la base)
@@ -4251,7 +4376,7 @@ const fmtCorto = n => n >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? "
 const colorDiasMora = d => d > 90 ? "var(--red)" : d > 30 ? "#B8860B" : "var(--green)";
 const numG = x => parseFloat(x) || 0;
 
-async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom){
+async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conCierres){
   const estado = document.getElementById("ger-estado");
   estado.textContent = "Cargando el panel de gerencia...";
   const meses = [];
@@ -4259,11 +4384,13 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom){
     const d = new Date(anio, mesNum - 1 - i, 1);
     meses.push({ iso: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, etiqueta: MESES[d.getMonth()].slice(0, 3) });
   }
-  const sig = new Date(anio, mesNum, 1);
-  const finISO = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, "0")}-01`;
   const [tend, comis, cart] = await Promise.all([
-    Promise.all(meses.map((m, i) => i === meses.length - 1 ? Promise.resolve({ data: filasCom, error: null }) : sb.rpc("dashboard_por_comercial", { p_mes: m.iso }))),
-    traerFilas(() => sb.from("comprobantes").select("id,asesor,comision_valor").gte("fecha_pago", mesISO).lt("fecha_pago", finISO).order("id"), 20000),
+    Promise.all(meses.map((m, i) => i === meses.length - 1 ? Promise.resolve({ data: filasCom, error: null }) : sb.rpc(COM_RPC.nombre, { p_mes: m.iso }))),
+    traerFilas(() => {      // comisión de los pagos del período (con cierres: desde el día siguiente al cierre anterior hasta el cierre)
+      let q = sb.from("comprobantes").select("id,asesor,comision_valor").gte("fecha_pago", periodo.inicio);
+      if(periodo.fin) q = q.lte("fecha_pago", periodo.fin);
+      return q.order("id");
+    }, 20000),
     traerFilas(() => sb.from("cartera").select("n_factura,cliente,comercial,ruta,fecha_factura,saldo_pendiente,dias_mora")
       .order("saldo_pendiente", { ascending: false }).order("n_factura"), 5000),
   ]);
@@ -4271,9 +4398,10 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom){
 
   const comisPor = {};
   (comis.data || []).forEach(r => { if(r.asesor) comisPor[r.asesor] = (comisPor[r.asesor] || 0) + numG(r.comision_valor); });
-  const comerciales = (filasCom || []).map(r => r.comercial);
+  const comerciales = (filasCom || []).map(r => r.comercial).filter(c => c !== "SIN ASIGNAR");
+  const tieneSinAsignar = (filasCom || []).some(r => r.comercial === "SIN ASIGNAR");   // ventas, pagos y cartera sin comercial activo
   GER.datos = {
-    mesNum, anio, comerciales, comisPor, comisOk: !comis.error,
+    mesNum, anio, comerciales, tieneSinAsignar, periodo, conCierres, comisPor, comisOk: !comis.error,
     mesActual: Object.fromEntries((filasCom || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes), cartera: numG(r.cartera_saldo) }])),
     tendencia: meses.map((m, i) => ({ etiqueta: m.etiqueta, filas: Object.fromEntries(((tend[i] && tend[i].data) || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes) }])) })),
     cartera: cart.data || [],
@@ -4284,7 +4412,8 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom){
   document.getElementById("ger-f-ruta").innerHTML = `<option value="todas">Todas</option>` + rutas.map(r => `<option value="${escapar(r)}">${escapar(r)}</option>`).join("");
   document.getElementById("ger-f-cliente").innerHTML = `<option value="todos">Todos</option>` + clientes.map(c => `<option value="${escapar(c)}">${escapar(c)}</option>`).join("");
   GER.ruta = "todas"; GER.cliente = "todos";
-  estado.textContent = `Datos del mes elegido en el Dashboard${comis.error ? " · No se pudo leer la comisión del mes" : ""}. La cartera es la de hoy.`;
+  estado.textContent = `Período del mes elegido en el Dashboard: ${textoPeriodo(periodo)}${conCierres ? (periodo.cerrado ? " (cerrado)" : " (abierto)") : " (mes calendario)"}.` +
+    ` Ventas sin IVA. La cartera es la de hoy.${comis.error ? " · No se pudo leer la comisión del período." : ""}`;
   renderGerencia();
 }
 
@@ -4301,16 +4430,17 @@ async function cargarSemanalGerencia(){
   for(let i = 4; i >= 0; i--){ const ini = new Date(lunesActual); ini.setDate(ini.getDate() - 7 * i); semanas.push({ ini: isoLocal(ini), etiqueta: `${String(ini.getDate()).padStart(2, "0")}/${String(ini.getMonth() + 1).padStart(2, "0")}`, filas: {} }); }
   const desde = semanas[0].ini;
   const [rv, rp] = await Promise.all([
-    traerFilas(() => sb.from("ventas").select("id,comercial,fecha_factura,valor_factura,nit,cliente,estado").gte("fecha_factura", desde)
+    traerFilas(() => sb.from("ventas").select("id,comercial,fecha_factura,valor_factura,valor_factura_sin_iva,nit,cliente,estado").gte("fecha_factura", desde)
       .or("estado.is.null,estado.not.ilike.anulad*").order("id"), 20000),
     traerFilas(() => sb.from("comprobantes").select("id,asesor,fecha_pago,valor_pagado").gte("fecha_pago", desde).order("id"), 20000),
   ]);
   if(rv.error || rp.error){ estado.textContent = "No se pudo cargar la vista semanal: " + (rv.error || rp.error).message; return; }
   const idxSemana = f => { let k = -1; semanas.forEach((s, i) => { if(f >= s.ini) k = i; }); return k; };
+  const clave = a => (a && D.comerciales.includes(a)) ? a : "SIN ASIGNAR";      // sin comercial activo -> "SIN ASIGNAR" (solo cuenta en Todos)
   const celda = (i, a) => (semanas[i].filas[a] = semanas[i].filas[a] || { ventas: 0, recaudo: 0, facturas: 0, clientes: new Set() });
-  rv.data.forEach(v => { const i = idxSemana(v.fecha_factura); if(i < 0 || !v.comercial) return; const c = celda(i, v.comercial);
-    c.ventas += numG(v.valor_factura); c.facturas += 1; c.clientes.add(v.nit || v.cliente); });
-  rp.data.forEach(p => { const i = idxSemana(p.fecha_pago); if(i < 0 || !p.asesor) return; celda(i, p.asesor).recaudo += numG(p.valor_pagado); });
+  rv.data.forEach(v => { const i = idxSemana(v.fecha_factura); if(i < 0) return; const c = celda(i, clave(v.comercial));
+    c.ventas += (v.valor_factura_sin_iva != null ? numG(v.valor_factura_sin_iva) : numG(v.valor_factura)); c.facturas += 1; c.clientes.add(v.nit || v.cliente); });
+  rp.data.forEach(p => { const i = idxSemana(p.fecha_pago); if(i < 0) return; celda(i, clave(p.asesor)).recaudo += numG(p.valor_pagado); });
   const fin = new Date(lunesActual); fin.setDate(fin.getDate() + 6);
   D.semanal = { semanas, etiquetaActual: `${String(lunesActual.getDate()).padStart(2, "0")}/${String(lunesActual.getMonth() + 1).padStart(2, "0")} al ${String(fin.getDate()).padStart(2, "0")}/${String(fin.getMonth() + 1).padStart(2, "0")}` };
   estado.textContent = `Vista semanal: semana del ${D.semanal.etiquetaActual} (lunes a domingo). La cartera es la de hoy.`;
@@ -4321,7 +4451,7 @@ function renderGerencia(){
   const semanal = GER.vista === "semanal";
   if(semanal && !D.semanal){ cargarSemanalGerencia().then(renderGerencia); return; }
   const todos = GER.asesor === "Todos";
-  const lista = todos ? D.comerciales : [GER.asesor];
+  const lista = todos ? [...D.comerciales, ...(D.tieneSinAsignar ? ["SIN ASIGNAR"] : [])] : [GER.asesor];
   const mesTxt = `${MESES[D.mesNum - 1]} ${D.anio}`;
   const sum = (f) => lista.reduce((s, a) => s + f(a), 0);
   const set = (id, t) => { document.getElementById(id).textContent = t; };
@@ -4330,7 +4460,7 @@ function renderGerencia(){
   document.getElementById("ger-asesores").innerHTML = ["Todos", ...D.comerciales].map(a =>
     `<button type="button" class="ger-btn${a === GER.asesor ? " activo" : ""}" data-ger-asesor="${escapar(a)}">${escapar(a)}</button>`).join("");
 
-  const carteraFilas = D.cartera.filter(c => lista.includes(c.comercial));
+  const carteraFilas = todos ? D.cartera : D.cartera.filter(c => c.comercial === GER.asesor);
   const carteraTot = carteraFilas.reduce((s, c) => s + numG(c.saldo_pendiente), 0);
   const clientesSaldo = new Set(carteraFilas.map(c => c.cliente)).size;
   const colorEfic = e => e >= 70 ? "#2D7D4A" : e >= 50 ? "#8B6914" : "#C0392B";
@@ -4353,17 +4483,19 @@ function renderGerencia(){
   // Tarjetas
   if(!semanal){
     const comision = sum(a => D.comisPor[a] || 0);
-    set("g-ventas-label", `Ventas ${todos ? "equipo" : GER.asesor} — ${mesTxt}`); set("g-ventas", fmtCOP(ventas)); set("g-ventas-sub", `${lista.length} comercial${lista.length > 1 ? "es" : ""}`);
+    const sinAsig = todos ? ((D.mesActual["SIN ASIGNAR"] || {}).ventas || 0) : 0;
+    set("g-ventas-label", `Ventas ${todos ? "equipo" : GER.asesor} — ${mesTxt} (sin IVA)`); set("g-ventas", fmtCOP(ventas));
+    set("g-ventas-sub", `${textoPeriodo(D.periodo)}${sinAsig ? ` · incluye ${fmtCOP(sinAsig)} sin comercial asignado` : ""}`);
     set("g-recaudo-label", `Recaudo ${mesTxt}`); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de eficiencia (recaudo / ventas)`);
     set("g-cartera-label", "Cartera activa"); set("g-cartera", fmtCOP(carteraTot)); set("g-cartera-sub", `${clientesSaldo} clientes con saldo · ${carteraFilas.length} facturas`);
-    set("g-comision-label", `Comisión ${mesTxt}`); set("g-comision", D.comisOk ? fmtCOP(comision) : "—"); set("g-comision-sub", "Por los pagos del mes, sobre valor sin IVA");
+    set("g-comision-label", `Comisión ${mesTxt}`); set("g-comision", D.comisOk ? fmtCOP(comision) : "—"); set("g-comision-sub", "Por los pagos del período, sobre valor sin IVA");
   } else {
     const sems = D.semanal.semanas, ult = sems.length - 1;
     const facturas = sum(a => (sems[ult].filas[a] || {}).facturas || 0);
     const clientes = new Set(); lista.forEach(a => ((sems[ult].filas[a] || {}).clientes || new Set()).forEach(c => clientes.add(c)));
     const ventasAnt = serie[ult - 1] ? serie[ult - 1].ventas : 0;
     const variacion = ventasAnt ? Math.round((ventas - ventasAnt) / ventasAnt * 100) : null;
-    set("g-ventas-label", `Ventas esta semana${todos ? "" : " — " + GER.asesor}`); set("g-ventas", fmtCOP(ventas));
+    set("g-ventas-label", `Ventas esta semana${todos ? "" : " — " + GER.asesor} (sin IVA)`); set("g-ventas", fmtCOP(ventas));
     set("g-ventas-sub", variacion === null ? "sin semana anterior para comparar" : `${variacion >= 0 ? "↑" : "↓"} ${Math.abs(variacion)} % vs semana anterior (${fmtCorto(ventasAnt)})`);
     set("g-recaudo-label", "Recaudo esta semana"); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de lo vendido`);
     set("g-cartera-label", "Facturas emitidas"); set("g-cartera", String(facturas)); set("g-cartera-sub", `${clientes.size} clientes únicos`);
