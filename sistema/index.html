@@ -401,6 +401,9 @@
                   <label>Mes a aplicar</label>
                   <input type="text" id="v-mes_a_aplicar">
                 </div>
+                <div class="field full hint" id="v-reduce-hint" style="margin-top:4px;">
+                  La nota crédito, el descuento y la retención bajan el saldo de la factura.
+                </div>
                 <div class="field full hint" style="margin-top:4px;">
                   Días de pago y comisión ya no se capturan aquí — se calculan solos cuando se registra el comprobante de pago de la factura. Cuando definamos la regla de comisión, ambos quedarán visibles en Cartera.
                 </div>
@@ -1498,7 +1501,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2143,6 +2146,36 @@ let abonadoVentaEnEdicion = 0;
 let tipoDocVentaOriginal = null;   // "FVE" o "REM" de la venta que se está editando
 const VENTAS_PLASTICOS = { disponible: true };   // pasa a false si la base aún no tiene ventas.es_plasticos (parche v24)
 
+/* Nota crédito, descuento y retención escritos en la venta BAJAN el saldo de la factura (igual que una devolución hecha desde un comprobante:
+   cuentan como abonado, no generan comisión y no cambian el valor de la factura). La base guarda en ventas.abonado todo lo aplicado
+   (pagos + descuento + devolución + retención), así que al editar solo se aplica la DIFERENCIA frente a lo que ya estaba guardado. */
+let ventaOrigEdicion = null;   // { nota_credito, descuento, retencion } de la venta que se está editando
+const numCampo = id => parseFloat(document.getElementById(id).value) || 0;
+function calcularSaldoVenta(){
+  const valor = numCampo("v-valor_factura");
+  const nc = numCampo("v-nota_credito"), de = numCampo("v-descuento"), re = numCampo("v-retencion");
+  let abonadoNuevo, delta;
+  if(editandoVentaId !== null){
+    const o = ventaOrigEdicion || {};
+    delta = (nc - (parseFloat(o.nota_credito) || 0)) + (de - (parseFloat(o.descuento) || 0)) + (re - (parseFloat(o.retencion) || 0));
+    abonadoNuevo = Math.max(abonadoVentaEnEdicion + delta, 0);
+  } else {
+    delta = nc + de + re;
+    abonadoNuevo = numCampo("v-abonado") + delta;
+  }
+  return { valor, delta, abonadoNuevo, saldo: Math.max(valor - abonadoNuevo, 0), excede: delta > 0 && abonadoNuevo > valor + 0.5 };
+}
+function actualizarHintReducciones(){
+  const hint = document.getElementById("v-reduce-hint");
+  const s = calcularSaldoVenta();
+  if(!s.delta){ hint.textContent = "La nota crédito, el descuento y la retención bajan el saldo de la factura."; hint.className = "hint"; return; }
+  hint.textContent = s.excede
+    ? `La nota crédito, el descuento y la retención superan el saldo de la factura (${fmtCOP(Math.max(s.valor - (s.abonadoNuevo - s.delta), 0))}).`
+    : `${s.delta > 0 ? "Bajan" : "Suben"} el saldo en ${fmtCOP(Math.abs(s.delta))}. Saldo de la factura después de guardar: ${fmtCOP(s.saldo)}.`;
+  hint.className = s.excede ? "hint lookup-warn" : "hint lookup-ok";
+}
+["v-valor_factura", "v-abonado", "v-nota_credito", "v-descuento", "v-retencion"].forEach(id => document.getElementById(id).addEventListener("input", actualizarHintReducciones));
+
 document.getElementById("form-venta").addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = document.getElementById("v-msg");
@@ -2175,10 +2208,17 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
       tipoDocVentaOriginal = vTipoDoc.value;   // ya cambió en la base; si falla lo siguiente, no se repite
     }
 
-    const nuevoSaldo = Math.max(valor_factura - abonadoVentaEnEdicion, 0);
+    const red = calcularSaldoVenta();
+    if(red.excede){
+      btn.disabled = false; btn.textContent = "Actualizar venta";
+      msg.textContent = `La nota crédito, el descuento y la retención superan el saldo de la factura (${fmtCOP(Math.max(red.valor - (red.abonadoNuevo - red.delta), 0))}).`;
+      msg.classList.add("err"); return;
+    }
+    const nuevoSaldo = red.saldo;
     const estadoSeleccionado = document.getElementById("v-estado").value;
 
     const payload = {
+      ...(red.delta !== 0 ? { abonado: red.abonadoNuevo } : {}),
       fecha_factura,
       nit: document.getElementById("v-nit").value.trim() || null,
       cliente: document.getElementById("v-cliente").value.trim(),
@@ -2196,7 +2236,7 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
       mes_a_aplicar: document.getElementById("v-mes_a_aplicar").value.trim() || null,
       recibo_contabilidad: document.getElementById("v-recibo_contabilidad").value.trim() || null,
       ...(VENTAS_PLASTICOS.disponible ? { es_plasticos: document.getElementById("v-plasticos").checked } : {}),
-      // n_factura, abonado y fuente NO se tocan: ver nota en entrarModoEdicionVenta()
+      // n_factura y fuente NO se tocan; abonado solo cambia por la diferencia de nota crédito/descuento/retención (ver calcularSaldoVenta)
     };
 
     const { error } = await sb.from("ventas").update(payload).eq("id", editandoVentaId);
@@ -2214,8 +2254,13 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
     return;
   }
 
+  const redN = calcularSaldoVenta();
+  if(redN.excede){
+    msg.textContent = `El abono, la nota crédito, el descuento y la retención superan el valor de la factura (${fmtCOP(valor_factura)}).`;
+    msg.classList.add("err"); return;
+  }
   btn.disabled = true; btn.textContent = "Guardando...";
-  const abonado = parseFloat(document.getElementById("v-abonado").value) || 0;
+  const abonado = redN.abonadoNuevo;   // abono inicial + nota crédito + descuento + retención
 
   const payload = {
     fecha_factura,
@@ -2228,7 +2273,7 @@ document.getElementById("form-venta").addEventListener("submit", async (e) => {
     valor_factura_sin_iva,
     abonado,
     saldo_pendiente: Math.max(valor_factura - abonado, 0),
-    estado: document.getElementById("v-estado").value,
+    estado: (valor_factura > 0 && abonado >= valor_factura - 0.5) ? "Pagado" : document.getElementById("v-estado").value,
     mes: mesDe(fecha_factura),
     fuente: "nuevo",
     fecha_despacho: document.getElementById("v-fecha_despacho").value || null,
@@ -2264,6 +2309,7 @@ function limpiarFormularioVenta(){
   document.getElementById("v-msg").className = "msg";
   actualizarPreviewFactura();
   calcularValorSinIva();
+  actualizarHintReducciones();
 }
 document.getElementById("v-limpiar").addEventListener("click", () => {
   if(editandoVentaId !== null) salirModoEdicionVenta();
@@ -2289,6 +2335,7 @@ function entrarModoEdicionVenta(){
 function salirModoEdicionVenta(){
   editandoVentaId = null;
   abonadoVentaEnEdicion = 0;
+  ventaOrigEdicion = null;
   document.getElementById("v-submit").textContent = "Guardar venta";
   document.getElementById("v-cancelar-edicion").style.display = "none";
   vTipoDoc.disabled = false;
@@ -2305,6 +2352,7 @@ function editarVenta(id){
 
   editandoVentaId = id;
   abonadoVentaEnEdicion = parseFloat(fila.abonado) || 0;
+  ventaOrigEdicion = { nota_credito: fila.nota_credito, descuento: fila.descuento, retencion: fila.retencion };
   limpiarFormularioVenta();
   entrarModoEdicionVenta();
 
@@ -2329,6 +2377,7 @@ function editarVenta(id){
   document.getElementById("v-recibo_contabilidad").value = fila.recibo_contabilidad || "";
   document.getElementById("v-plasticos").checked = !!fila.es_plasticos;
   calcularValorSinIva();
+  actualizarHintReducciones();
 
   document.getElementById("form-venta").scrollIntoView({ behavior: "smooth", block: "start" });
 }
