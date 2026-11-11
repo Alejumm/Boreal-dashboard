@@ -176,7 +176,7 @@ function setFiltroCliente(v) { filtroCliente = v; renderSemanal(); }
 function render() {
   if (!DATA) return;
   document.getElementById("headerSub").textContent =
-    DATA.asesor + " — " + (view==="mensual" ? DATA.mes_label : "Semana en curso");
+    DATA.asesor + " — " + (view==="mensual" ? DATA.mes_label + (DATA.periodo_label ? " (" + DATA.periodo_label + ")" : "") : "Semana en curso");
   view==="mensual" ? renderMensual() : renderSemanal();
 }
 
@@ -233,7 +233,7 @@ function renderMensual() {
     <div class="banner">
       <div>
         <div class="banner-name">${DATA.asesor}</div>
-        <div class="banner-sub">#${d.ranking} en el equipo · Eficiencia: ${pct(d.eficiencia)} · ${DATA.mes_label}</div>
+        <div class="banner-sub">#${d.ranking} en el equipo · Eficiencia: ${pct(d.eficiencia)} · ${DATA.mes_label}${DATA.periodo_label ? " (" + DATA.periodo_label + ")" : ""}</div>
       </div>
       <div class="var-badge" style="background:${up?"#E8F5EE":"#FAEAE8"};border:1px solid ${up?"#2D7D4A":"#C0392B"}">
         <div class="var-label">vs mes anterior</div>
