@@ -243,6 +243,11 @@
         <div class="field"><label>Observaciones</label><input type="text" id="fe-observaciones"></div>
       </div>
       <div class="hint" id="fe-info" style="margin-top:8px;"></div>
+      <div id="fe-nc-campos" class="grid" style="margin-top:12px;">
+        <div class="field"><label>Nota crédito ($)</label><input type="number" step="0.01" min="0" id="fe-nc-valor" placeholder="0"></div>
+        <div class="field"><label>Nota crédito (%)</label><input type="number" step="0.01" min="0" max="100" id="fe-nc-pct" placeholder="Ej: 1"></div>
+        <div class="field"><div class="hint" style="margin-top:22px;">Escribe el % o el valor: el otro se calcula. Baja el saldo de la factura.</div></div>
+      </div>
       <div class="msg" id="fe-msg"></div>
       <div style="display:flex; gap:10px; margin-top:12px;">
         <button type="submit" class="btn-submit" id="fe-submit">Guardar cambios</button>
@@ -361,7 +366,6 @@
               <select id="v-estado">
                 <option>Pendiente</option>
                 <option>Pagado</option>
-                <option>Anulado</option>
               </select>
             </div>
             <div class="field">
@@ -432,6 +436,10 @@
           <div class="field">
             <label>Plásticos</label>
             <select id="v-hist-pl"><option value="">Todas</option><option value="si">Sí</option><option value="no">No</option></select>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <label style="font-weight:400; display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" id="v-hist-anuladas"> Mostrar anuladas</label>
           </div>
           <div class="field">
             <label>Ordenar por</label>
@@ -842,6 +850,14 @@
             <div class="field">
               <label>Abono inicial</label>
               <input type="number" step="0.01" id="cp-abono" value="0">
+            </div>
+            <div class="field">
+              <label>Nota crédito (%)</label>
+              <input type="number" step="0.01" min="0" max="100" id="cp-nc-pct" placeholder="Ej: 1">
+            </div>
+            <div class="field">
+              <label>Nota crédito ($)</label>
+              <input type="number" step="0.01" min="0" id="cp-nc-valor" placeholder="Se calcula con el %">
             </div>
             <div class="field full">
               <label>Observaciones</label>
@@ -1482,7 +1498,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -1792,7 +1808,7 @@ async function buscarVentaPorFactura(nfacRaw){
   const candidatos = [...new Set([nfacRaw, `FVE-${sinPrefijo}`, sinPrefijo])];
   const orFilter = candidatos.map(c => `n_factura.eq.${c}`).join(",");
   const consulta = cols => sb.from("ventas").select(cols).or(orFilter).limit(1).maybeSingle();
-  const COLS = "cliente, nit, saldo_pendiente, valor_factura, n_factura, comercial";
+  const COLS = "cliente, nit, saldo_pendiente, valor_factura, n_factura, comercial, estado";
   let { data, error } = await consulta(VENTAS_PLASTICOS.disponible ? COLS + ", es_plasticos" : COLS);
   if(error && VENTAS_PLASTICOS.disponible){      // la base aún no tiene ventas.es_plasticos (parche v24)
     VENTAS_PLASTICOS.disponible = false;
@@ -1943,7 +1959,12 @@ cFacInput.addEventListener("input", () => {
     cFacStatus.className = "hint";
     const data = await buscarVentaPorFactura(nfacRaw);
     pintarAvisoPlasticos(document.getElementById("c-fac-plasticos"), data);
-    if(data){
+    if(data && /^anulad/i.test(data.estado || "")){
+      // una venta anulada no recibe pagos (la base también lo impide)
+      delete cFacInput.dataset.saldoPendiente;
+      cFacStatus.textContent = `La venta ${data.n_factura} está ANULADA: no se le pueden registrar pagos. Restáurala en el historial de ventas si fue un error.`;
+      cFacStatus.className = "lookup-warn";
+    } else if(data){
       document.getElementById("c-cliente").value = data.cliente || "";
       if(data.nit) document.getElementById("c-nit").value = data.nit;
       autoAsesorDesdeVenta(data);
@@ -2338,13 +2359,16 @@ async function cargarHistorialVentas(){
   const desde = document.getElementById("v-hist-desde").value;
   const hasta = document.getElementById("v-hist-hasta").value;
 
-  const filtrar = q => {
+  const mostrarAnuladas = document.getElementById("v-hist-anuladas").checked;
+  // Las anuladas se ocultan salvo que se pida verlas, y NUNCA suman en los totales
+  const filtrar = (q, paraTotal) => {
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
     if(comercial) q = q.eq("comercial", comercial);
     if(tipoDoc) q = q.eq("tipo_documento", tipoDoc);
     if(plasticos && VENTAS_PLASTICOS.disponible) q = q.eq("es_plasticos", plasticos === "si");
     if(desde) q = q.gte("fecha_factura", desde);
     if(hasta) q = q.lte("fecha_factura", hasta);
+    if(paraTotal || !mostrarAnuladas) q = q.or("estado.is.null,estado.not.ilike.anulad*");
     return q;
   };
 
@@ -2353,15 +2377,24 @@ async function cargarHistorialVentas(){
     .order(...(orden === "fecha" ? ["fecha_factura", { ascending: false }] : ["n_documento_num", { ascending: false, nullsFirst: false }]))
     .order("id", { ascending: false }), limiteHist.v);
   const consultaFilas = (async () => {
-    let r = await armarConsultaFilas(VENTAS_PLASTICOS.disponible ? COLS_VENTAS + ",es_plasticos" : COLS_VENTAS);
-    if(r.error && VENTAS_PLASTICOS.disponible){      // la base aún no tiene el parche v24 (plásticos): se trabaja sin eso
-      VENTAS_PLASTICOS.disponible = false;
-      document.getElementById("v-hist-pl").value = "";
-      r = await armarConsultaFilas(COLS_VENTAS);
+    // Se intenta con todas las columnas nuevas; si la base aún no tiene un parche, se quita lo que falte
+    const intentos = [];
+    if(VENTAS_PLASTICOS.disponible && VENTAS_ANULAR.disponible) intentos.push([COLS_VENTAS + ",es_plasticos" + COLS_ANULADA, true, true]);
+    if(VENTAS_PLASTICOS.disponible) intentos.push([COLS_VENTAS + ",es_plasticos", true, false]);
+    if(VENTAS_ANULAR.disponible) intentos.push([COLS_VENTAS + COLS_ANULADA, false, true]);
+    intentos.push([COLS_VENTAS, false, false]);
+    let r;
+    for(const [cols, conPl, conAn] of intentos){
+      r = await armarConsultaFilas(cols);
+      if(!r.error){
+        if(!conPl && VENTAS_PLASTICOS.disponible){ VENTAS_PLASTICOS.disponible = false; document.getElementById("v-hist-pl").value = ""; }
+        if(!conAn && VENTAS_ANULAR.disponible) VENTAS_ANULAR.disponible = false;
+        break;
+      }
     }
     return r;
   })();
-  const consultaTotal = totalFiltrado(() => filtrar(sb.from("ventas").select("id,valor_factura")), "valor_factura").catch(() => null);
+  const consultaTotal = totalFiltrado(() => filtrar(sb.from("ventas").select("id,valor_factura"), true), "valor_factura").catch(() => null);
 
   const [{ data, error }, totales] = await Promise.all([consultaFilas, consultaTotal, cargarRecibosCaja()]);
   if(miReq !== reqHistVentas) return; // llegó una búsqueda más nueva, esta ya no vale
@@ -2380,14 +2413,68 @@ async function cargarHistorialVentas(){
     tbody.innerHTML = `<tr><td colspan="11" class="empty-state">No hay ventas con esos filtros.</td></tr>`;
     return;
   }
-  tbody.innerHTML = historialVentasCache.map(p => `<tr>
-    <td>${p.fecha_factura}</td><td>${p.fecha_despacho||"—"}</td><td>${p.n_factura}${p.es_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td><td>${RECIBOS_CAJA[p.n_factura]||"—"}</td><td>${p.recibo_contabilidad||"—"}</td><td>${p.cliente}</td>
-    <td>${p.comercial||"—"}</td><td class="num">${fmtCOP(p.valor_factura)}</td>
-    <td><span class="badge ${p.estado==='Pagado'?'badge-pag':'badge-pend'}">${p.estado}</span></td>
-    <td class="num">${diasVentaHtml(p)}</td>
-    <td><button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarVenta(${p.id})">Editar</button></td>
-  </tr>`).join("");
+  const btnFila = "padding:5px 12px; font-size:11px;";
+  const fechaLocalV = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
+  tbody.innerHTML = historialVentasCache.map(p => {
+    const anul = /^anulad/i.test(p.estado || "");
+    const tach = t => anul ? `<s>${t}</s>` : t;
+    const nota = anul ? `<br><span class="hint">Anulada por ${escapar(p.anulada_por || "—")}${p.anulada_en ? " el " + fechaLocalV(p.anulada_en) : ""}: ${escapar(p.anulada_motivo || "")}</span>` : "";
+    const acciones = !VENTAS_ANULAR.disponible
+      ? `<button type="button" class="btn-submit" style="${btnFila} background:var(--steel-800);" onclick="editarVenta(${p.id})">Editar</button>`
+      : anul
+        ? `<button type="button" class="btn-submit" style="${btnFila} background:var(--steel-800);" onclick="restaurarVenta(${p.id})">Restaurar</button>`
+        : `<button type="button" class="btn-submit" style="${btnFila} background:var(--steel-800);" onclick="editarVenta(${p.id})">Editar</button>
+           <button type="button" class="btn-submit" style="${btnFila} background:var(--red);" onclick="anularVenta(${p.id})">Anular</button>`;
+    return `<tr${anul ? ' class="gasto-anulado"' : ""}>
+    <td>${tach(p.fecha_factura)}</td><td>${p.fecha_despacho||"—"}</td><td>${tach(escapar(p.n_factura))}${p.es_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}${nota}</td><td>${RECIBOS_CAJA[p.n_factura]||"—"}</td><td>${p.recibo_contabilidad||"—"}</td><td>${tach(escapar(p.cliente))}</td>
+    <td>${p.comercial||"—"}</td><td class="num">${tach(fmtCOP(p.valor_factura))}</td>
+    <td><span class="badge ${p.estado==='Pagado'?'badge-pag':'badge-pend'}">${anul ? "Anulada" : p.estado}</span></td>
+    <td class="num">${anul ? "—" : diasVentaHtml(p)}</td>
+    <td>${acciones}</td>
+  </tr>`;
+  }).join("");
 }
+
+/* Anular y restaurar ventas (parche v26). Anular no borra: queda quién, cuándo y por qué; solo se puede si la venta no tiene pagos.
+   La venta sale de la cartera, del Dashboard y de los reportes; restaurarla la devuelve a como estaba. */
+const VENTAS_ANULAR = { disponible: true };
+const COLS_ANULADA = ",anulada_motivo,anulada_por,anulada_en";
+async function anularVenta(id){
+  const p = historialVentasCache.find(x => x.id === id);
+  if(!p) return;
+  const msg = document.getElementById("v-msg");
+  if((parseFloat(p.abonado) || 0) > 0){
+    alert(`La venta ${p.n_factura} ya tiene pagos registrados (${fmtCOP(p.abonado)}).\n\nPrimero anula o corrige esos pagos y luego anula la venta.`);
+    return;
+  }
+  const resumen = `${p.n_factura} · ${p.cliente} · ${fmtCOP(p.valor_factura)}`;
+  const motivo = (prompt(`Motivo para anular la venta ${resumen} (obligatorio). Ejemplo: factura duplicada.`, "") || "").trim();
+  if(!motivo) return;
+  if(!confirm(`¿Anular la venta ${resumen}?\n\nSale de la cartera, del Dashboard y de los reportes de comerciales. Queda guardada con el motivo y se puede restaurar.`)) return;
+  const { error } = await sb.rpc("anular_venta", { p_id: id, p_motivo: motivo });
+  msg.className = "msg";
+  if(error){
+    msg.textContent = /function .*anular_venta|schema cache/i.test(error.message || "")
+      ? "Falta el parche v26 en la base de datos: avisa a quien administra el sistema."
+      : "No se pudo anular: " + error.message;
+    msg.classList.add("err"); return;
+  }
+  if(editandoVentaId === id) salirModoEdicionVenta();
+  cargarHistorialVentas(); cargarCartera();
+  msg.textContent = `Venta anulada: ${p.n_factura}.`; msg.classList.add("ok");
+}
+async function restaurarVenta(id){
+  const p = historialVentasCache.find(x => x.id === id);
+  if(!p) return;
+  const msg = document.getElementById("v-msg");
+  if(!confirm(`¿Restaurar la venta ${p.n_factura} · ${p.cliente}? Vuelve a contar en la cartera, el Dashboard y los reportes.`)) return;
+  const { error } = await sb.rpc("restaurar_venta", { p_id: id });
+  msg.className = "msg";
+  if(error){ msg.textContent = "No se pudo restaurar: " + error.message; msg.classList.add("err"); return; }
+  cargarHistorialVentas(); cargarCartera();
+  msg.textContent = `Venta restaurada: ${p.n_factura}.`; msg.classList.add("ok");
+}
+document.getElementById("v-hist-anuladas").addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-buscar").addEventListener("click", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-comercial").addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); });
 ["v-hist-tipo", "v-hist-orden", "v-hist-pl"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); }));
@@ -3123,15 +3210,29 @@ document.getElementById("form-compra").addEventListener("submit", async (e) => {
     mes_comercial: mesDe(fecha),
   };
 
+  // Nota crédito opcional (una por factura): la base la suma al abono, así que el saldo baja sin mover el banco
+  const ncValor = Math.round((parseFloat(document.getElementById("cp-nc-valor").value) || 0) * 100) / 100;
+  if(ncValor > 0){
+    if(ncValor + abono > valor + 0.5){
+      btn.disabled = false; btn.textContent = "Guardar compra";
+      msg.textContent = `La nota crédito (${fmtCOP(ncValor)}) supera el saldo de la factura (${fmtCOP(valor - abono)}).`;
+      msg.classList.add("err");
+      return;
+    }
+    payload.notas_credito = ncValor;
+  }
+
   const { error } = await sb.from("compras_proveedores").insert(payload);
   btn.disabled = false; btn.textContent = "Guardar compra";
   if(error){
-    msg.textContent = "Error al guardar: " + error.message;
+    msg.textContent = ncValor > 0 && /notas_credito|schema cache/i.test(error.message || "")
+      ? "Falta el parche v27 en la base de datos (notas crédito): avisa a quien administra el sistema."
+      : "Error al guardar: " + error.message;
     msg.classList.add("err");
     return;
   }
   olvidarFacturasProv();
-  msg.textContent = "Compra guardada correctamente (" + payload.n_factura + ").";
+  msg.textContent = "Compra guardada correctamente (" + payload.n_factura + ")." + (ncValor > 0 ? ` Nota crédito: ${fmtCOP(ncValor)}.` : "");
   msg.classList.add("ok");
   limpiarFormularioCompra(true);
   cargarCarteraProveedores();
@@ -3189,10 +3290,21 @@ async function facturasDeProveedor(nombre){
   if(_facturasProvCache[k]) return _facturasProvCache[k];
   const consulta = cols => sb.from("compras_proveedores").select(cols)
     .ilike("proveedor", String(nombre).trim().replace(/[%_]/g, m => "\\" + m)).order("fecha", { ascending: false }).limit(1000);
-  let { data, error } = await consulta(PROV_IMP.disponible ? "n_factura,saldo,valor,abono,proveedor,retencion,ica" : "n_factura,saldo,valor,abono,proveedor");
-  if(error && PROV_IMP.disponible){            // la base aún no tiene el parche v18 (retención/ICA): se trabaja sin eso
-    PROV_IMP.disponible = false;
-    ({ data, error } = await consulta("n_factura,saldo,valor,abono,proveedor"));
+  // Se intenta con las columnas de los parches v18 (retención/ICA) y v27 (notas crédito); si la base aún no los tiene, se quita lo que falte
+  const BASE = "n_factura,saldo,valor,abono,proveedor";
+  const intentos = [];
+  if(PROV_IMP.disponible && NC_PROV.disponible) intentos.push([BASE + ",retencion,ica,notas_credito", true, true]);
+  if(PROV_IMP.disponible) intentos.push([BASE + ",retencion,ica", true, false]);
+  if(NC_PROV.disponible) intentos.push([BASE + ",notas_credito", false, true]);
+  intentos.push([BASE, false, false]);
+  let data = null, error = null;
+  for(const [cols, conImp, conNc] of intentos){
+    ({ data, error } = await consulta(cols));
+    if(!error){
+      if(!conImp && PROV_IMP.disponible) PROV_IMP.disponible = false;
+      if(!conNc && NC_PROV.disponible) NC_PROV.disponible = false;
+      break;
+    }
   }
   if(error) return [];
   _facturasProvCache[k] = data || [];
@@ -3204,6 +3316,9 @@ async function facturasDeProveedor(nombre){
    Base = valor de la factura / ivaDivisor. Con 1 se calcula sobre el valor tal como está registrado (así se hizo en CASF 5716);
    si el valor registrado incluye IVA y la base debe ser antes de IVA, poner 1.19. */
 const PROV_IMP = { retPct: 0.025, retBase: 523000, icaPct: 0.005, icaBase: 1414000, ivaDivisor: 1, disponible: true };
+const NC_PROV = { disponible: true };   // pasa a false si la base aún no tiene el parche v27 (notas crédito de proveedores)
+/* Valor sobre el que se calculan retención e ICA: el de la factura menos sus notas crédito. */
+const valorNetoFactura = f => Math.max(0, (parseFloat(f.valor) || 0) - (parseFloat(f.notas_credito) || 0));
 const PROV_CIUDAD = {};   // proveedor (minúsculas) -> ciudad
 const esBogota = c => /bogot/.test(String(c || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase());
 function impuestosProveedor(valor, bogota, yaRet, yaIca){
@@ -3296,11 +3411,12 @@ function pintarHintImpuestosPP(){
   const hint = document.getElementById("pp-imp-hint"), f = ppFacActual;
   if(!f || !PROV_IMP.disponible){ hint.textContent = ""; return; }
   const bog = document.getElementById("pp-bogota").checked;
-  const calc = impuestosProveedor(f.valor, bog, f.retencion, f.ica);
+  const calc = impuestosProveedor(valorNetoFactura(f), bog, f.retencion, f.ica);
   const { ret, ica } = ppImpuestosActuales();
   const neto = parseFloat(document.getElementById("pp-valor_pagado").value) || 0;
   const saldoDespues = (parseFloat(f.saldo) || 0) - neto - ret - ica;
-  hint.innerHTML = `Valor factura ${fmtCOP(f.valor)} · base ${fmtCOP(calc.base)} · retención de la factura ${fmtCOP(calc.retTotal)}${bog ? " · ICA " + fmtCOP(calc.icaTotal) : ""}. `
+  const ncF = parseFloat(f.notas_credito) || 0;
+  hint.innerHTML = `Valor factura ${fmtCOP(f.valor)}${ncF ? " − notas crédito " + fmtCOP(ncF) : ""} · base ${fmtCOP(calc.base)} · retención de la factura ${fmtCOP(calc.retTotal)}${bog ? " · ICA " + fmtCOP(calc.icaTotal) : ""}. `
     + `Con este pago el saldo queda en <strong>${fmtCOP(saldoDespues)}</strong>.`;
 }
 function sugerirPagoPP(f, forzar){
@@ -3312,7 +3428,7 @@ function sugerirPagoPP(f, forzar){
     document.getElementById("pp-bogota").checked = esBogota(PROV_CIUDAD[document.getElementById("pp-proveedor").value.trim().toLowerCase()]);
   }
   ppFacSugerida = clave;
-  const calc = impuestosProveedor(f.valor, document.getElementById("pp-bogota").checked, f.retencion, f.ica);
+  const calc = impuestosProveedor(valorNetoFactura(f), document.getElementById("pp-bogota").checked, f.retencion, f.ica);
   const saldo = parseFloat(f.saldo) || 0;
   const ret = Math.min(calc.ret, saldo), ica = Math.min(calc.ica, Math.max(0, saldo - ret));
   document.getElementById("pp-retencion").value = ret;
@@ -4371,14 +4487,19 @@ async function cargarFacturasProv(){
   const tb = document.querySelector("#fp-tabla tbody");
   const texto = (document.getElementById("fp-buscar").value || "").replace(/[,()%*]/g, " ").replace(/\s+/g, " ").trim();
   const est = document.getElementById("fp-estado").value, desde = document.getElementById("fp-desde").value, hasta = document.getElementById("fp-hasta").value;
-  let q = sb.from("compras_proveedores").select("id,fecha,proveedor,n_factura,valor,abono,saldo,vencimiento,estado,observaciones")
-    .order("fecha", { ascending: false }).order("id", { ascending: false }).limit(300);
-  if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
-  if(est === "saldo") q = q.gt("saldo", 0.5);
-  if(est === "pagada") q = q.lte("saldo", 0.5);
-  if(desde) q = q.gte("fecha", desde);
-  if(hasta) q = q.lte("fecha", hasta);
-  const { data, error } = await q;
+  const COLS_FP = "id,fecha,proveedor,n_factura,valor,abono,saldo,vencimiento,estado,observaciones";
+  const armarFp = cols => {
+    let q = sb.from("compras_proveedores").select(cols)
+      .order("fecha", { ascending: false }).order("id", { ascending: false }).limit(300);
+    if(texto) q = q.or(`proveedor.ilike.%${texto}%,n_factura.ilike.%${texto}%`);
+    if(est === "saldo") q = q.gt("saldo", 0.5);
+    if(est === "pagada") q = q.lte("saldo", 0.5);
+    if(desde) q = q.gte("fecha", desde);
+    if(hasta) q = q.lte("fecha", hasta);
+    return q;
+  };
+  let { data, error } = await armarFp(NC_PROV.disponible ? COLS_FP + ",notas_credito" : COLS_FP);
+  if(error && NC_PROV.disponible){ NC_PROV.disponible = false; ({ data, error } = await armarFp(COLS_FP)); }   // sin el parche v27
   if(error){ tb.innerHTML = `<tr><td colspan="9" class="empty-state">No se pudo cargar: ${escapar(error.message)}</td></tr>`; return; }
   FACTURAS_PROV = data || [];
   const suma = c => FACTURAS_PROV.reduce((a, r) => a + (parseFloat(r[c]) || 0), 0);
@@ -4391,7 +4512,7 @@ async function cargarFacturasProv(){
     ? `<tr><td colspan="9" class="empty-state">No hay facturas con esos filtros.</td></tr>`
     : FACTURAS_PROV.map(r => `<tr>
         <td>${escapar(r.fecha)}</td><td>${escapar(r.proveedor)}</td><td>${escapar(r.n_factura)}</td>
-        <td class="num">${fmtCOP(r.valor)}</td><td class="num">${fmtCOP(r.abono || 0)}</td><td class="num">${fmtCOP(r.saldo)}</td>
+        <td class="num">${fmtCOP(r.valor)}</td><td class="num">${fmtCOP(r.abono || 0)}${(parseFloat(r.notas_credito) || 0) > 0 ? `<br><span class="hint">incl. nota crédito ${fmtCOP(r.notas_credito)}</span>` : ""}</td><td class="num">${fmtCOP(r.saldo)}</td>
         <td>${escapar(r.vencimiento || "—")}</td><td>${(parseFloat(r.saldo) || 0) <= 0.5 ? "Pagada" : "Pendiente"}</td>
         <td><button type="button" class="btn-submit" data-fp-editar="${r.id}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Editar</button></td></tr>`).join("");
 }
@@ -4406,26 +4527,68 @@ document.querySelector("#fp-tabla tbody").addEventListener("click", e => {
   document.getElementById("fe-proveedor").value = r.proveedor; document.getElementById("fe-n_factura").value = r.n_factura;
   document.getElementById("fe-fecha").value = r.fecha || ""; document.getElementById("fe-valor").value = r.valor ?? "";
   document.getElementById("fe-vencimiento").value = r.vencimiento || ""; document.getElementById("fe-observaciones").value = r.observaciones || "";
-  document.getElementById("fe-info").textContent = `Abonado ${fmtCOP(r.abono || 0)} (sale de los pagos registrados) · saldo actual ${fmtCOP(r.saldo)}. El saldo se recalcula con el valor nuevo.`;
+  document.getElementById("fe-info").textContent = textoInfoFactura(r);
   const m = document.getElementById("fe-msg"); m.textContent = ""; m.className = "msg";
+  // Nota crédito de la factura: valor en $ y su % (se calcula sobre el valor de la factura)
+  const nc = parseFloat(r.notas_credito) || 0;
+  document.getElementById("fe-nc-campos").style.display = NC_PROV.disponible ? "" : "none";
+  document.getElementById("fe-nc-valor").value = nc || "";
+  document.getElementById("fe-nc-pct").value = nc && parseFloat(r.valor) > 0 ? Math.round(nc / parseFloat(r.valor) * 10000) / 100 : "";
   abrirModal("modal-factura-prov");
 });
 document.getElementById("fe-cancelar").addEventListener("click", () => cerrarModal("modal-factura-prov"));
+
+/* ---- Nota crédito de una factura de proveedor (parche v27): una casilla en $ y otra en %, ligadas ----
+   Escribir el % calcula el valor sobre el valor de la factura; escribir el valor calcula el %. La base suma la nota al abono (baja el saldo sin mover el banco). */
+function textoInfoFactura(r){
+  const nc = parseFloat(r.notas_credito) || 0;
+  return `Abonado ${fmtCOP(r.abono || 0)}${nc ? " (incluye nota crédito de " + fmtCOP(nc) + ")" : " (sale de los pagos registrados)"} · saldo actual ${fmtCOP(r.saldo)}. El saldo se recalcula con el valor nuevo.`;
+}
+function enlazarNotaCredito(idBase, idValor, idPct){
+  const base = () => parseFloat(document.getElementById(idBase).value) || 0;
+  const elV = document.getElementById(idValor), elP = document.getElementById(idPct);
+  elP.addEventListener("input", () => {
+    const p = parseFloat(elP.value);
+    elV.value = isNaN(p) || !base() ? "" : Math.round(base() * p / 100);
+  });
+  elV.addEventListener("input", () => {
+    const v = parseFloat(elV.value);
+    elP.value = isNaN(v) || !base() ? "" : Math.round(v / base() * 10000) / 100;
+  });
+  document.getElementById(idBase).addEventListener("input", () => {     // si cambia el valor de la factura, el % manda
+    const p = parseFloat(elP.value);
+    if(!isNaN(p) && base()) elV.value = Math.round(base() * p / 100);
+  });
+}
+enlazarNotaCredito("cp-valor", "cp-nc-valor", "cp-nc-pct");
+enlazarNotaCredito("fe-valor", "fe-nc-valor", "fe-nc-pct");
+
 document.getElementById("form-factura-prov").addEventListener("submit", async e => {
   e.preventDefault();
   const r = FACTURA_PROV_EDITANDO; if(!r) return;
   const msg = document.getElementById("fe-msg"), btn = document.getElementById("fe-submit");
   msg.textContent = ""; msg.className = "msg";
-  const fecha = document.getElementById("fe-fecha").value, valor = parseFloat(document.getElementById("fe-valor").value) || 0, abono = parseFloat(r.abono) || 0;
+  const fecha = document.getElementById("fe-fecha").value, valor = parseFloat(document.getElementById("fe-valor").value) || 0;
+  // El abono de la factura incluye su nota crédito: se separa para recalcularlo si la nota cambia
+  const ncAntes = parseFloat(r.notas_credito) || 0;
+  const ncNuevo = NC_PROV.disponible ? (Math.round((parseFloat(document.getElementById("fe-nc-valor").value) || 0) * 100) / 100) : ncAntes;
+  const abono = (parseFloat(r.abono) || 0) - ncAntes + ncNuevo;
   if(!fecha || !(valor > 0)){ msg.textContent = "Indica la fecha y un valor mayor a cero."; msg.classList.add("err"); return; }
-  if(valor < abono - 0.005){ msg.textContent = `El valor no puede ser menor a lo ya abonado (${fmtCOP(abono)}).`; msg.classList.add("err"); return; }
+  if(valor < abono - 0.005){
+    msg.textContent = ncNuevo !== ncAntes
+      ? `La nota crédito (${fmtCOP(ncNuevo)}) supera el saldo de la factura (${fmtCOP(valor - ((parseFloat(r.abono) || 0) - ncAntes))}).`
+      : `El valor no puede ser menor a lo ya abonado (${fmtCOP(abono)}).`;
+    msg.classList.add("err"); return;
+  }
   btn.disabled = true; btn.textContent = "Guardando...";
   const { error } = await sb.from("compras_proveedores").update({
     fecha, valor, vencimiento: document.getElementById("fe-vencimiento").value || null,
     observaciones: nullSiVacio(document.getElementById("fe-observaciones").value), mes_comercial: mesDe(fecha),
+    ...(ncNuevo !== ncAntes ? { notas_credito: ncNuevo } : {}),
     estado: abono >= valor && valor > 0 ? "Pagado" : "Pendiente" }).eq("id", r.id);
   btn.disabled = false; btn.textContent = "Guardar cambios";
   if(error){ msg.textContent = "No se pudo guardar: " + error.message; msg.classList.add("err"); return; }
+  olvidarFacturasProv();
   cerrarModal("modal-factura-prov");
   FACTURA_PROV_EDITANDO = null;
   cargarCarteraProveedores();
