@@ -173,6 +173,24 @@
   .t-rojo{ background:#FBE9E7; color:#A32D2D; }
   .dash-dos{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
   .dash-sub-h{ font-family:'Oswald',sans-serif; font-size:13px; margin:0 0 10px; color:var(--steel-900); }
+  .ger-btns{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
+  .ger-btn{ padding:6px 14px; font-size:12px; background:var(--steel-100); color:var(--steel-800); border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em; }
+  .ger-btn.activo{ background:var(--steel-900); color:#fff; border-color:var(--steel-900); }
+  .ger-chart{ display:flex; align-items:flex-end; gap:10px; height:185px; }
+  .ger-grupo{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0; }
+  .ger-barras{ display:flex; align-items:flex-end; gap:3px; }
+  .ger-col{ display:flex; flex-direction:column; align-items:center; justify-content:flex-end; }
+  .ger-barra{ width:18px; border-radius:2px 2px 0 0; }
+  .ger-val{ font-size:9px; white-space:nowrap; font-family:'IBM Plex Mono',monospace; }
+  .ger-mes{ font-size:11px; color:var(--text-dim); margin-top:4px; }
+  .ger-rank-item{ padding:6px 8px; border-radius:3px; cursor:pointer; margin-bottom:4px; }
+  .ger-rank-item:hover{ background:var(--steel-100); }
+  .ger-rank-item.sel{ background:#E0F2EC; }
+  .ger-rank-fila{ display:flex; align-items:center; gap:8px; font-size:13px; }
+  .ger-rank-fondo{ height:5px; background:var(--steel-100); border-radius:3px; margin-top:4px; overflow:hidden; }
+  .ger-rank-barra{ height:100%; background:#B0A89E; }
+  .ger-rank-item.sel .ger-rank-barra{ background:#2D7D4A; }
+  @media (max-width:820px){ #ger-kpis{ grid-template-columns:repeat(2, minmax(0,1fr)) !important; } }
   .estado-mora{ color:var(--red); font-weight:600; }
   .estado-vencer{ color:#B8860B; font-weight:600; }
   .estado-dia{ color:var(--green); font-weight:600; }
@@ -1377,6 +1395,52 @@
         </div>
       </div>
 
+      <div class="panel" id="ger-panel">
+        <h2 id="ger-titulo">Panel de gerencia</h2>
+        <div class="hint" id="ger-estado" style="margin-bottom:10px;">Cargando...</div>
+        <div class="ger-btns" id="ger-vistas">
+          <button type="button" class="ger-btn activo" data-ger-vista="mensual">Mensual</button>
+          <button type="button" class="ger-btn" data-ger-vista="semanal">Semanal</button>
+        </div>
+        <div class="ger-btns" id="ger-asesores"></div>
+
+        <div class="dash-grid" id="ger-kpis" style="grid-template-columns:repeat(4, minmax(0,1fr));">
+          <div class="dash-tile t-teal"><div class="dash-label" id="g-ventas-label">Ventas</div><div class="dash-valor" id="g-ventas" style="font-size:20px;">—</div><div class="dash-sub" id="g-ventas-sub"></div></div>
+          <div class="dash-tile t-verde"><div class="dash-label" id="g-recaudo-label">Recaudo</div><div class="dash-valor" id="g-recaudo" style="font-size:20px;">—</div><div class="dash-sub" id="g-recaudo-sub"></div></div>
+          <div class="dash-tile t-azul"><div class="dash-label" id="g-cartera-label">Cartera activa</div><div class="dash-valor" id="g-cartera" style="font-size:20px;">—</div><div class="dash-sub" id="g-cartera-sub"></div></div>
+          <div class="dash-tile t-ambar"><div class="dash-label" id="g-comision-label">Comisión</div><div class="dash-valor" id="g-comision" style="font-size:20px;">—</div><div class="dash-sub" id="g-comision-sub"></div></div>
+        </div>
+
+        <div class="dash-dos" style="margin-top:14px;">
+          <div>
+            <h3 class="dash-sub-h" id="ger-tend-titulo">Tendencia — ventas vs recaudo</h3>
+            <div class="ger-chart" id="ger-chart"></div>
+            <div class="hint" style="display:flex; gap:14px; margin-top:6px;">
+              <span><span style="display:inline-block;width:10px;height:10px;background:#2D7D4A;margin-right:4px;"></span>Ventas</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#B8860B;margin-right:4px;"></span>Recaudo</span>
+            </div>
+          </div>
+          <div>
+            <h3 class="dash-sub-h" id="ger-rank-titulo">Ranking del equipo</h3>
+            <div id="ger-ranking"></div>
+          </div>
+        </div>
+
+        <h3 class="dash-sub-h" style="margin-top:18px; color:var(--red);">Pendiente de cobro</h3>
+        <div class="filters">
+          <div class="field"><label>Ruta</label><select id="ger-f-ruta"><option value="todas">Todas</option></select></div>
+          <div class="field grow"><label>Cliente</label><select id="ger-f-cliente"><option value="todos">Todos</option></select></div>
+          <div class="field grow"><div class="hint" id="ger-cartera-resumen" style="margin-top:26px; color:var(--red);"></div></div>
+        </div>
+        <div class="table-wrap">
+          <table id="ger-cartera">
+            <thead><tr><th>Cliente / Factura</th><th id="ger-th-asesor">Asesor</th><th>Ruta</th><th>Fecha</th><th class="num">Saldo</th><th class="num">Días mora</th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="hint" id="ger-cartera-nota"></div>
+      </div>
+
       <div class="panel">
         <div class="dash-dos">
           <div>
@@ -1510,7 +1574,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -4077,6 +4141,8 @@ async function verificarAccesoDashboard(){
   tab.style.display = "none";
   const { data, error } = await sb.rpc("es_usuario_dashboard");
   if(!error && data === true) tab.style.display = "";
+  // El link del gerente (gerente.html) abre el sistema con #dashboard: tras iniciar sesión se va directo a esa pestaña
+  if(!error && data === true && location.hash === "#dashboard") tab.click();
   ES_VALIDADOR = !error && data === true;
   if(historialComprobantesCache.length) pintarHistorialComprobantes();
 }
@@ -4171,8 +4237,187 @@ async function cargarDashboard(){
     ? `<tr><td colspan="9" class="empty-state">Sin comerciales activos.</td></tr>` : cuerpo + filaTotal;
   document.getElementById("d-com-titulo").textContent = `Cartera, ventas y recaudo por comercial — ${MESES[mesNum - 1].toLowerCase()} ${anio}`;
   nota.textContent = `Actualizado ${new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}. Cartera y saldo en bancos son acumulados a hoy; el resto corresponde al mes elegido.`;
+  cargarPanelGerencia(mesISO, anio, mesNum, filas);   // sin esperar: el panel de gerencia se llena aparte
 }
 document.getElementById("dash-refresh").addEventListener("click", cargarDashboard);
+
+/* ============================================================
+   PANEL DE GERENCIA (lo que tenía el antiguo gerente.html, ahora con los datos reales de la base)
+   Por comercial o de todo el equipo: ventas y recaudo del mes, cartera activa, comisión del mes, tendencia de 6 meses,
+   ranking y la lista de facturas pendientes de cobro con filtros por ruta y cliente.
+   ============================================================ */
+const GER = { vista: "mensual", asesor: "Todos", ruta: "todas", cliente: "todos", datos: null };
+const fmtCorto = n => n >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? "$" + Math.round(n / 1e3) + "K" : "$" + Math.round(n);
+const colorDiasMora = d => d > 90 ? "var(--red)" : d > 30 ? "#B8860B" : "var(--green)";
+const numG = x => parseFloat(x) || 0;
+
+async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom){
+  const estado = document.getElementById("ger-estado");
+  estado.textContent = "Cargando el panel de gerencia...";
+  const meses = [];
+  for(let i = 5; i >= 0; i--){
+    const d = new Date(anio, mesNum - 1 - i, 1);
+    meses.push({ iso: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, etiqueta: MESES[d.getMonth()].slice(0, 3) });
+  }
+  const sig = new Date(anio, mesNum, 1);
+  const finISO = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, "0")}-01`;
+  const [tend, comis, cart] = await Promise.all([
+    Promise.all(meses.map((m, i) => i === meses.length - 1 ? Promise.resolve({ data: filasCom, error: null }) : sb.rpc("dashboard_por_comercial", { p_mes: m.iso }))),
+    traerFilas(() => sb.from("comprobantes").select("id,asesor,comision_valor").gte("fecha_pago", mesISO).lt("fecha_pago", finISO).order("id"), 20000),
+    traerFilas(() => sb.from("cartera").select("n_factura,cliente,comercial,ruta,fecha_factura,saldo_pendiente,dias_mora")
+      .order("saldo_pendiente", { ascending: false }).order("n_factura"), 5000),
+  ]);
+  if(cart.error){ estado.textContent = "No se pudo cargar la cartera del panel: " + cart.error.message; return; }
+
+  const comisPor = {};
+  (comis.data || []).forEach(r => { if(r.asesor) comisPor[r.asesor] = (comisPor[r.asesor] || 0) + numG(r.comision_valor); });
+  const comerciales = (filasCom || []).map(r => r.comercial);
+  GER.datos = {
+    mesNum, anio, comerciales, comisPor, comisOk: !comis.error,
+    mesActual: Object.fromEntries((filasCom || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes), cartera: numG(r.cartera_saldo) }])),
+    tendencia: meses.map((m, i) => ({ etiqueta: m.etiqueta, filas: Object.fromEntries(((tend[i] && tend[i].data) || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes) }])) })),
+    cartera: cart.data || [],
+  };
+  if(GER.asesor !== "Todos" && !comerciales.includes(GER.asesor)) GER.asesor = "Todos";
+  const rutas = [...new Set(GER.datos.cartera.map(c => c.ruta || "Sin ruta"))].sort();
+  const clientes = [...new Set(GER.datos.cartera.map(c => c.cliente))].sort();
+  document.getElementById("ger-f-ruta").innerHTML = `<option value="todas">Todas</option>` + rutas.map(r => `<option value="${escapar(r)}">${escapar(r)}</option>`).join("");
+  document.getElementById("ger-f-cliente").innerHTML = `<option value="todos">Todos</option>` + clientes.map(c => `<option value="${escapar(c)}">${escapar(c)}</option>`).join("");
+  GER.ruta = "todas"; GER.cliente = "todos";
+  estado.textContent = `Datos del mes elegido en el Dashboard${comis.error ? " · No se pudo leer la comisión del mes" : ""}. La cartera es la de hoy.`;
+  renderGerencia();
+}
+
+/* Vista semanal (la del antiguo index.html "Dashboard comercial"): semana en curso (lunes a domingo), 5 semanas de tendencia y ranking semanal.
+   Se arma con las ventas (valor de la factura, sin anuladas) y los pagos de los últimos 35 días; se carga al abrirla por primera vez. */
+const lunesDe = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+async function cargarSemanalGerencia(){
+  const D = GER.datos; if(!D) return;
+  const estado = document.getElementById("ger-estado");
+  estado.textContent = "Cargando la vista semanal...";
+  const lunesActual = lunesDe(new Date());
+  const semanas = [];
+  for(let i = 4; i >= 0; i--){ const ini = new Date(lunesActual); ini.setDate(ini.getDate() - 7 * i); semanas.push({ ini: isoLocal(ini), etiqueta: `${String(ini.getDate()).padStart(2, "0")}/${String(ini.getMonth() + 1).padStart(2, "0")}`, filas: {} }); }
+  const desde = semanas[0].ini;
+  const [rv, rp] = await Promise.all([
+    traerFilas(() => sb.from("ventas").select("id,comercial,fecha_factura,valor_factura,nit,cliente,estado").gte("fecha_factura", desde)
+      .or("estado.is.null,estado.not.ilike.anulad*").order("id"), 20000),
+    traerFilas(() => sb.from("comprobantes").select("id,asesor,fecha_pago,valor_pagado").gte("fecha_pago", desde).order("id"), 20000),
+  ]);
+  if(rv.error || rp.error){ estado.textContent = "No se pudo cargar la vista semanal: " + (rv.error || rp.error).message; return; }
+  const idxSemana = f => { let k = -1; semanas.forEach((s, i) => { if(f >= s.ini) k = i; }); return k; };
+  const celda = (i, a) => (semanas[i].filas[a] = semanas[i].filas[a] || { ventas: 0, recaudo: 0, facturas: 0, clientes: new Set() });
+  rv.data.forEach(v => { const i = idxSemana(v.fecha_factura); if(i < 0 || !v.comercial) return; const c = celda(i, v.comercial);
+    c.ventas += numG(v.valor_factura); c.facturas += 1; c.clientes.add(v.nit || v.cliente); });
+  rp.data.forEach(p => { const i = idxSemana(p.fecha_pago); if(i < 0 || !p.asesor) return; celda(i, p.asesor).recaudo += numG(p.valor_pagado); });
+  const fin = new Date(lunesActual); fin.setDate(fin.getDate() + 6);
+  D.semanal = { semanas, etiquetaActual: `${String(lunesActual.getDate()).padStart(2, "0")}/${String(lunesActual.getMonth() + 1).padStart(2, "0")} al ${String(fin.getDate()).padStart(2, "0")}/${String(fin.getMonth() + 1).padStart(2, "0")}` };
+  estado.textContent = `Vista semanal: semana del ${D.semanal.etiquetaActual} (lunes a domingo). La cartera es la de hoy.`;
+}
+
+function renderGerencia(){
+  const D = GER.datos; if(!D) return;
+  const semanal = GER.vista === "semanal";
+  if(semanal && !D.semanal){ cargarSemanalGerencia().then(renderGerencia); return; }
+  const todos = GER.asesor === "Todos";
+  const lista = todos ? D.comerciales : [GER.asesor];
+  const mesTxt = `${MESES[D.mesNum - 1]} ${D.anio}`;
+  const sum = (f) => lista.reduce((s, a) => s + f(a), 0);
+  const set = (id, t) => { document.getElementById(id).textContent = t; };
+
+  document.querySelectorAll("[data-ger-vista]").forEach(b => b.classList.toggle("activo", b.dataset.gerVista === GER.vista));
+  document.getElementById("ger-asesores").innerHTML = ["Todos", ...D.comerciales].map(a =>
+    `<button type="button" class="ger-btn${a === GER.asesor ? " activo" : ""}" data-ger-asesor="${escapar(a)}">${escapar(a)}</button>`).join("");
+
+  const carteraFilas = D.cartera.filter(c => lista.includes(c.comercial));
+  const carteraTot = carteraFilas.reduce((s, c) => s + numG(c.saldo_pendiente), 0);
+  const clientesSaldo = new Set(carteraFilas.map(c => c.cliente)).size;
+  const colorEfic = e => e >= 70 ? "#2D7D4A" : e >= 50 ? "#8B6914" : "#C0392B";
+
+  // Valores por comercial según la vista (mes del Dashboard o semana en curso)
+  let porCom, serie, tituloTend, tituloRank;
+  if(!semanal){
+    porCom = a => D.mesActual[a] || { ventas: 0, recaudo: 0 };
+    serie = D.tendencia.map(t => ({ etiqueta: t.etiqueta, ventas: lista.reduce((s, a) => s + ((t.filas[a] || {}).ventas || 0), 0), recaudo: lista.reduce((s, a) => s + ((t.filas[a] || {}).recaudo || 0), 0) }));
+    tituloTend = "Tendencia — ventas vs recaudo (6 meses)"; tituloRank = `Ranking del equipo — ${mesTxt}`;
+  } else {
+    const ult = D.semanal.semanas.length - 1;
+    porCom = a => D.semanal.semanas[ult].filas[a] || { ventas: 0, recaudo: 0 };
+    serie = D.semanal.semanas.map(s => ({ etiqueta: s.etiqueta, ventas: lista.reduce((x, a) => x + ((s.filas[a] || {}).ventas || 0), 0), recaudo: lista.reduce((x, a) => x + ((s.filas[a] || {}).recaudo || 0), 0) }));
+    tituloTend = "Tendencia — últimas 5 semanas (ventas vs recaudo)"; tituloRank = `Ranking esta semana (${D.semanal.etiquetaActual})`;
+  }
+  const ventas = sum(a => porCom(a).ventas), recaudo = sum(a => porCom(a).recaudo);
+  const efic = ventas ? recaudo / ventas * 100 : 0;
+
+  // Tarjetas
+  if(!semanal){
+    const comision = sum(a => D.comisPor[a] || 0);
+    set("g-ventas-label", `Ventas ${todos ? "equipo" : GER.asesor} — ${mesTxt}`); set("g-ventas", fmtCOP(ventas)); set("g-ventas-sub", `${lista.length} comercial${lista.length > 1 ? "es" : ""}`);
+    set("g-recaudo-label", `Recaudo ${mesTxt}`); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de eficiencia (recaudo / ventas)`);
+    set("g-cartera-label", "Cartera activa"); set("g-cartera", fmtCOP(carteraTot)); set("g-cartera-sub", `${clientesSaldo} clientes con saldo · ${carteraFilas.length} facturas`);
+    set("g-comision-label", `Comisión ${mesTxt}`); set("g-comision", D.comisOk ? fmtCOP(comision) : "—"); set("g-comision-sub", "Por los pagos del mes, sobre valor sin IVA");
+  } else {
+    const sems = D.semanal.semanas, ult = sems.length - 1;
+    const facturas = sum(a => (sems[ult].filas[a] || {}).facturas || 0);
+    const clientes = new Set(); lista.forEach(a => ((sems[ult].filas[a] || {}).clientes || new Set()).forEach(c => clientes.add(c)));
+    const ventasAnt = serie[ult - 1] ? serie[ult - 1].ventas : 0;
+    const variacion = ventasAnt ? Math.round((ventas - ventasAnt) / ventasAnt * 100) : null;
+    set("g-ventas-label", `Ventas esta semana${todos ? "" : " — " + GER.asesor}`); set("g-ventas", fmtCOP(ventas));
+    set("g-ventas-sub", variacion === null ? "sin semana anterior para comparar" : `${variacion >= 0 ? "↑" : "↓"} ${Math.abs(variacion)} % vs semana anterior (${fmtCorto(ventasAnt)})`);
+    set("g-recaudo-label", "Recaudo esta semana"); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de lo vendido`);
+    set("g-cartera-label", "Facturas emitidas"); set("g-cartera", String(facturas)); set("g-cartera-sub", `${clientes.size} clientes únicos`);
+    set("g-comision-label", "Total por recaudar"); set("g-comision", fmtCOP(carteraTot)); set("g-comision-sub", `${clientesSaldo} clientes pendientes`);
+  }
+  document.getElementById("g-recaudo-sub").style.color = colorEfic(efic);
+
+  // Tendencia
+  const maxT = Math.max(...serie.map(t => Math.max(t.ventas, t.recaudo)), 1), ALTO = 120;
+  document.getElementById("ger-tend-titulo").textContent = tituloTend + (todos ? "" : " — " + GER.asesor);
+  document.getElementById("ger-chart").innerHTML = serie.map((t, i) => {
+    const ultimo = i === serie.length - 1, op = ultimo ? 1 : .65;
+    const hV = Math.max(3, Math.round(t.ventas / maxT * ALTO)), hR = Math.max(3, Math.round(t.recaudo / maxT * ALTO));
+    return `<div class="ger-grupo" style="opacity:${op}"><div class="ger-barras">
+      <div class="ger-col"><span class="ger-val" style="color:#2D7D4A">${fmtCorto(t.ventas)}</span><div class="ger-barra" style="height:${hV}px;background:#2D7D4A"></div></div>
+      <div class="ger-col"><span class="ger-val" style="color:#8B6914">${fmtCorto(t.recaudo)}</span><div class="ger-barra" style="height:${hR}px;background:#B8860B"></div></div>
+      </div><div class="ger-mes"${ultimo ? ' style="color:#2D7D4A;font-weight:600"' : ""}>${escapar(t.etiqueta)}${ultimo ? " ◀" : ""}</div></div>`;
+  }).join("");
+
+  // Ranking del equipo por ventas (del mes o de la semana)
+  const rank = D.comerciales.map(a => ({ a, v: porCom(a).ventas })).sort((x, y) => y.v - x.v);
+  const maxV = Math.max(...rank.map(r => r.v), 1), medallas = ["🥇", "🥈", "🥉"];
+  document.getElementById("ger-rank-titulo").textContent = tituloRank;
+  document.getElementById("ger-ranking").innerHTML = rank.length === 0 ? `<div class="hint">Sin comerciales.</div>` : rank.map((r, i) => `
+    <div class="ger-rank-item${r.a === GER.asesor ? " sel" : ""}" data-ger-asesor="${escapar(r.a)}">
+      <div class="ger-rank-fila"><span style="width:24px">${medallas[i] || (i + 1) + "."}</span><span style="flex:1;font-weight:${r.a === GER.asesor ? 600 : 400}">${escapar(r.a)}</span><strong>${fmtCOP(r.v)}</strong></div>
+      <div class="ger-rank-fondo"><div class="ger-rank-barra" style="width:${Math.round(r.v / maxV * 100)}%"></div></div></div>`).join("");
+
+  // Pendiente de cobro (con filtros)
+  let filas = carteraFilas;
+  if(GER.ruta !== "todas") filas = filas.filter(c => (c.ruta || "Sin ruta") === GER.ruta);
+  if(GER.cliente !== "todos") filas = filas.filter(c => c.cliente === GER.cliente);
+  const total = filas.reduce((s, c) => s + numG(c.saldo_pendiente), 0), TOPE = 400;
+  document.getElementById("ger-cartera-resumen").textContent = `${filas.length} facturas · Total ${fmtCOP(total)}`;
+  document.getElementById("ger-th-asesor").style.display = todos ? "" : "none";
+  document.querySelector("#ger-cartera tbody").innerHTML = filas.length === 0
+    ? `<tr><td colspan="${todos ? 6 : 5}" class="empty-state">No hay facturas con ese filtro.</td></tr>`
+    : filas.slice(0, TOPE).map(c => `<tr><td>${escapar(c.cliente)}<br><span class="hint" style="margin:0">${escapar(c.n_factura || "—")}</span></td>
+        ${todos ? `<td style="color:var(--green);font-weight:500">${escapar(c.comercial || "—")}</td>` : ""}
+        <td>${escapar(c.ruta || "Sin ruta")}</td><td>${escapar(c.fecha_factura || "—")}</td>
+        <td class="num" style="color:var(--red);white-space:nowrap">${fmtCOP(numG(c.saldo_pendiente))}</td>
+        <td class="num" style="font-weight:600;color:${colorDiasMora(numG(c.dias_mora))}">${c.dias_mora ?? "—"}</td></tr>`).join("");
+  document.getElementById("ger-cartera-nota").textContent = filas.length > TOPE ? `Se muestran las ${TOPE} facturas de mayor saldo; usa los filtros para ver las demás.` : "";
+}
+document.getElementById("ger-panel").addEventListener("click", e => {
+  const v = e.target.closest("[data-ger-vista]");
+  if(v){ GER.vista = v.dataset.gerVista; renderGerencia(); return; }
+  const b = e.target.closest("[data-ger-asesor]"); if(!b) return;
+  GER.asesor = b.dataset.gerAsesor; GER.ruta = "todas"; GER.cliente = "todos";
+  document.getElementById("ger-f-ruta").value = "todas"; document.getElementById("ger-f-cliente").value = "todos";
+  renderGerencia();
+});
+document.getElementById("ger-f-ruta").addEventListener("change", e => { GER.ruta = e.target.value; renderGerencia(); });
+document.getElementById("ger-f-cliente").addEventListener("change", e => { GER.cliente = e.target.value; renderGerencia(); });
 document.getElementById("dash-mes").addEventListener("change", cargarDashboard);
 
 /* ============================================================
