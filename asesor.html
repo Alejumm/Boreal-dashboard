@@ -170,8 +170,8 @@ function setView(v) {
   render();
 }
 
-function setFiltroRuta(v)    { filtroRuta = v;    renderSemanal(); }
-function setFiltroCliente(v) { filtroCliente = v; renderSemanal(); }
+function setFiltroRuta(v)    { filtroRuta = v;    view === "mensual" ? renderMensual() : renderSemanal(); }
+function setFiltroCliente(v) { filtroCliente = v; view === "mensual" ? renderMensual() : renderSemanal(); }
 
 function render() {
   if (!DATA) return;
@@ -221,6 +221,55 @@ function progressBar(label, pctVal, color, foot) {
 
 // ─── MENSUAL ─────────────────────────────────────────────────────────────────
 
+/* Pendiente de cobro con filtros de ruta y cliente. Se usa en la vista mensual y en la semanal.
+   Las facturas salen de DATA.semanal.detalleFacturas (toda la cartera del comercial, factura por factura). */
+function carteraCard() {
+  const d = DATA.semanal || {};
+  const rutas    = d.rutasDisponibles    || [];
+  const clientes = d.clientesDisponibles || [];
+  // Si el filtro guardado ya no existe (por ejemplo cambió la cartera), se vuelve a "todas/todos"
+  if (filtroRuta !== "todas" && !rutas.includes(filtroRuta)) filtroRuta = "todas";
+  if (filtroCliente !== "todos" && !clientes.includes(filtroCliente)) filtroCliente = "todos";
+
+  let facturas = d.detalleFacturas || [];
+  if (filtroRuta !== "todas")    facturas = facturas.filter(f => f.ruta === filtroRuta);
+  if (filtroCliente !== "todos") facturas = facturas.filter(f => f.cliente === filtroCliente);
+  const total = facturas.reduce((s,f) => s + f.saldo, 0);
+
+  return `
+    <div class="card">
+      <div class="cartera-header">
+        <div class="card-title" style="margin-bottom:0;color:#C0392B">Pendiente de cobro</div>
+        <div style="font-size:11px;color:#C0392B">${facturas.length} facturas · Total: ${fmt(total)}</div>
+      </div>
+
+      <div class="filters-row">
+        <select onchange="setFiltroRuta(this.value)">
+          <option value="todas">Ruta: todas</option>
+          ${rutas.map(r => `<option value="${r}" ${filtroRuta===r?"selected":""}>${r}</option>`).join("")}
+        </select>
+        <select onchange="setFiltroCliente(this.value)">
+          <option value="todos">Cliente: todos</option>
+          ${clientes.map(c => `<option value="${c}" ${filtroCliente===c?"selected":""}>${c}</option>`).join("")}
+        </select>
+      </div>
+
+      ${facturas.length === 0 ? '<div class="empty-state">No hay facturas pendientes con ese filtro</div>' : `
+      <div class="table-header" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
+        <span>Cliente / Factura</span><span>Ruta</span><span>Fecha</span><span>Saldo</span><span>Días mora</span>
+      </div>
+      ${facturas.map(f => `
+        <div class="table-row" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
+          <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A7570">${f.factura||"—"}</span></span>
+          <span class="row-c" style="font-size:11px">${f.ruta}</span>
+          <span class="row-c" style="font-size:11px">${f.fecha||"—"}</span>
+          <span class="row-r" style="color:#C0392B;white-space:nowrap">${fmt(f.saldo)}</span>
+          <span class="row-r" style="font-weight:600;color:${diasColor(f.dias)}">${f.dias}</span>
+        </div>`).join("")}
+      `}
+    </div>`;
+}
+
 function renderMensual() {
   const d = DATA.mensual;
   const up = d.var_ventas >= 0;
@@ -269,7 +318,9 @@ function renderMensual() {
         <div class="legend-item"><div class="legend-dot" style="background:#2D7D4A"></div>Ventas</div>
         <div class="legend-item"><div class="legend-dot" style="background:#B8860B"></div>Recaudo</div>
       </div>
-    </div>`;
+    </div>
+
+    ${carteraCard()}`;
 }
 
 // ─── SEMANAL ─────────────────────────────────────────────────────────────────
@@ -315,37 +366,7 @@ function renderSemanal() {
       </div>
     </div>
 
-    <div class="card">
-      <div class="cartera-header">
-        <div class="card-title" style="margin-bottom:0;color:#C0392B">Pendiente de cobro</div>
-        <div style="font-size:11px;color:#C0392B">${facturas.length} facturas · Total: ${fmt(totalFiltrado)}</div>
-      </div>
-
-      <div class="filters-row">
-        <select onchange="setFiltroRuta(this.value)">
-          <option value="todas">Ruta: todas</option>
-          ${(d.rutasDisponibles||[]).map(r => `<option value="${r}" ${filtroRuta===r?"selected":""}>${r}</option>`).join("")}
-        </select>
-        <select onchange="setFiltroCliente(this.value)">
-          <option value="todos">Cliente: todos</option>
-          ${(d.clientesDisponibles||[]).map(c => `<option value="${c}" ${filtroCliente===c?"selected":""}>${c}</option>`).join("")}
-        </select>
-      </div>
-
-      ${facturas.length === 0 ? '<div class="empty-state">No hay facturas pendientes con ese filtro</div>' : `
-      <div class="table-header" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
-        <span>Cliente / Factura</span><span>Ruta</span><span>Fecha</span><span>Saldo</span><span>Días mora</span>
-      </div>
-      ${facturas.map((f,i) => `
-        <div class="table-row" style="grid-template-columns:1.6fr 0.7fr 0.7fr 1.1fr 0.7fr">
-          <span class="row-c">${f.cliente}<br><span style="font-size:10px;color:#7A7570">${f.factura||"—"}</span></span>
-          <span class="row-c" style="font-size:11px">${f.ruta}</span>
-          <span class="row-c" style="font-size:11px">${f.fecha||"—"}</span>
-          <span class="row-r" style="color:#C0392B;white-space:nowrap">${fmt(f.saldo)}</span>
-          <span class="row-r" style="font-weight:600;color:${diasColor(f.dias)}">${f.dias}</span>
-        </div>`).join("")}
-      `}
-    </div>`;
+    ${carteraCard()}`;
 }
 
 cargarDatos();
