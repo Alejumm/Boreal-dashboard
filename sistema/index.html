@@ -1485,6 +1485,24 @@
           <div class="field grow"><div class="hint" id="cierre-hint" style="margin-top:26px;"></div></div>
         </div>
         <div class="msg" id="cierre-msg"></div>
+
+        <div id="cortes-bloque" style="margin-top:22px; padding-top:14px; border-top:1px solid var(--line);">
+          <h3 class="dash-sub-h">Corte de comisiones y recaudo</h3>
+          <div class="hint" style="margin-bottom:10px;">La gerente paga comisiones el 30 o el 31 de cada mes y lo decide ella. Ese día <strong>cuenta</strong> para la comisión de ese mes; los pagos posteriores van al mes siguiente. El recaudo del Dashboard y la comisión del Panel de gerencia y de los reportes usan este corte (no el cierre de ventas). Regístralo el día que se pagan las comisiones.</div>
+          <div class="table-wrap">
+            <table id="cortes-tabla">
+              <thead><tr><th>Mes</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Registrado por</th></tr></thead>
+              <tbody><tr><td colspan="5" class="empty-state">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="filters" style="margin-top:12px;">
+            <div class="field"><label>Mes del corte</label><select id="corte-mes"></select></div>
+            <div class="field"><label>Fecha de corte (el 30 o el 31)</label><input type="date" id="corte-fecha"></div>
+            <div class="field"><label>&nbsp;</label><button type="button" class="btn-submit" id="corte-guardar" style="padding:10px 20px;">Registrar corte</button></div>
+            <div class="field grow"><div class="hint" id="corte-hint" style="margin-top:26px;"></div></div>
+          </div>
+          <div class="msg" id="corte-msg"></div>
+        </div>
       </div>
 
       <div class="panel">
@@ -1597,7 +1615,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v30";
+const APP_VERSION = "v31";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3955,11 +3973,22 @@ function etiquetaMes(valorMonthInput){
   return `${MESES_LABEL[m-1]} ${y}`;
 }
 
-function inicializarLiquidarComisiones(){
+/* Período de comisiones de un mes ("YYYY-MM"): del día siguiente al corte anterior hasta el corte de ese mes (inclusive).
+   Si el mes aún no tiene corte registrado, llega hasta hoy. Sin el parche v30 se usa el mes calendario como antes. */
+let CORTES = null;      // lista de cortes de comisiones; null = la base aún no los tiene
+async function rangoLiquidacion(valorMonthInput){
+  if(CORTES === null) CORTES = await cargarCortesComisiones();
+  if(CORTES === null) return rangoDelMes(valorMonthInput);
+  const p = periodoDeMes(valorMonthInput + "-01", CORTES);
+  return { desde: p.inicio, hasta: p.fin || hoyISO(), abierto: !p.fin };
+}
+
+async function inicializarLiquidarComisiones(){
   if(!liquidarInicializado){
     document.getElementById("liq-periodo").value = mesActualISO();
     liquidarInicializado = true;
   }
+  CORTES = await cargarCortesComisiones();
   cargarPendientesLiquidar();
   cargarHistorialLiquidaciones();
 }
@@ -3975,9 +4004,10 @@ async function cargarPendientesLiquidar(){
     tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Selecciona un periodo.</td></tr>`;
     return;
   }
-  const { desde, hasta } = rangoDelMes(periodo);
-  document.getElementById("liq-periodo-label").textContent = etiquetaMes(periodo);
-  document.getElementById("liq-pendientes-titulo").textContent = `Comisiones pendientes de liquidar — ${asesor} — ${etiquetaMes(periodo)}`;
+  const { desde, hasta, abierto } = await rangoLiquidacion(periodo);
+  const rangoTxt = `${fechaLarga(desde)} – ${abierto ? "hoy" : fechaLarga(hasta)}`;
+  document.getElementById("liq-periodo-label").textContent = `${etiquetaMes(periodo)} (${rangoTxt})`;
+  document.getElementById("liq-pendientes-titulo").textContent = `Comisiones pendientes de liquidar — ${asesor} — ${etiquetaMes(periodo)} (${rangoTxt})`;
   document.getElementById("liq-historial-titulo").textContent = `Historial de liquidaciones — ${asesor}`;
 
   tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Buscando...</td></tr>`;
@@ -4042,7 +4072,7 @@ document.getElementById("liq-liquidar").addEventListener("click", async () => {
   const btn = document.getElementById("liq-liquidar");
   const asesor = document.getElementById("liq-asesor").value;
   const periodo = document.getElementById("liq-periodo").value;
-  const { desde } = rangoDelMes(periodo);
+  const desde = periodo + "-01";     // la liquidación se guarda con el primer día del mes (no con el inicio del período de corte)
 
   const seleccionados = [...document.querySelectorAll(".liq-chk")].filter(c => c.checked);
   if(seleccionados.length === 0) return;
@@ -4078,7 +4108,8 @@ document.getElementById("liq-liquidar").addEventListener("click", async () => {
     return;
   }
 
-  msg.textContent = `Liquidación registrada: ${fmtCOP(total)} para ${asesor}, ${ids.length} comprobantes.`;
+  msg.textContent = `Liquidación registrada: ${fmtCOP(total)} para ${asesor}, ${ids.length} comprobantes.` +
+    (CORTES !== null ? " Cuando termines con todos los comerciales, registra el corte de comisiones en Dashboard → Cierres de mes." : "");
   msg.classList.add("ok");
   cargarPendientesLiquidar();
   cargarHistorialLiquidaciones();
@@ -4178,6 +4209,12 @@ async function cargarCierresMes(){
   const { data, error } = await sb.from("cierres_mes").select("mes,fecha_cierre,creado_por,actualizado_por").order("mes", { ascending: true });
   return error ? null : (data || []);     // null = la base aún no tiene la tabla
 }
+/* Cortes de comisiones y recaudo (parche v30): la gerente paga comisiones el 30 o el 31 y registra ese corte cada mes.
+   Se devuelven con la misma forma que los cierres de ventas (fecha_cierre = fecha de corte) para reutilizar periodoDeMes. */
+async function cargarCortesComisiones(){
+  const { data, error } = await sb.from("cierres_comisiones").select("mes,fecha_corte,creado_por,actualizado_por").order("mes", { ascending: true });
+  return error ? null : (data || []).map(c => ({ ...c, fecha_cierre: c.fecha_corte }));
+}
 /* Período (inicio, fin, cerrado) de un mes según la lista de cierres; igual que periodo_mes de la base. */
 function periodoDeMes(mesISO, cierres){
   const m = mesISO.slice(0, 7) + "-01";
@@ -4199,8 +4236,9 @@ const textoPeriodo = p => `${fechaLarga(p.inicio)} – ${p.fin ? fechaLarga(p.fi
 async function cargarDashboard(){
   const inp = document.getElementById("dash-mes");
   const hoyMes = hoyISO().slice(0, 7);
-  const cierres = await cargarCierresMes();
+  const [cierres, cortes] = await Promise.all([cargarCierresMes(), cargarCortesComisiones()]);
   pintarCierres(cierres);
+  pintarCortes(cortes);
   const mesAbierto = mesAbiertoDe(cierres) || hoyMes;      // el mes en curso es el que aún no se ha cerrado
   if(!inp.value) inp.value = mesAbierto;
   const mesISO = inp.value + "-01";
@@ -4237,11 +4275,16 @@ async function cargarDashboard(){
   const conCierres = k.periodo_inicio !== undefined;
   const periodo = conCierres ? { inicio: k.periodo_inicio, fin: k.periodo_fin, cerrado: !!k.periodo_cerrado } : periodoDeMes(mesISO, null);
   const rangoTxt = textoPeriodo(periodo);
+  // Recaudo y comisiones tienen su propio corte (la gerente paga comisiones el 30 o el 31): parche v30
+  const conCortes = k.comision_inicio !== undefined;
+  const periodoCom = conCortes ? { inicio: k.comision_inicio, fin: k.comision_fin, cerrado: !!k.comision_cerrado } : periodo;
+  const rangoCom = textoPeriodo(periodoCom);
   const chip = document.getElementById("dash-periodo");
   chip.className = "dash-periodo" + (periodo.cerrado ? "" : " abierto");
-  chip.textContent = conCierres
-    ? `Período de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${rangoTxt} · ${periodo.cerrado ? "cerrado" : "abierto"}`
-    : `Mes calendario de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${rangoTxt} (la base aún no tiene los cierres de mes)`;
+  chip.innerHTML = conCierres
+    ? `Ventas de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${escapar(rangoTxt)} · ${periodo.cerrado ? "cerrado" : "abierto"}` +
+      (conCortes ? `<br>Recaudo y comisiones: ${escapar(rangoCom)} · ${periodoCom.cerrado ? "corte registrado" : "abierto"}` : "")
+    : `Mes calendario de ${MESES_LABEL[mesNum - 1].toLowerCase()} ${anio}: ${escapar(rangoTxt)} (la base aún no tiene los cierres de mes)`;
 
   const set = (id, txt) => { document.getElementById(id).textContent = txt; };
   set("d-cartera", fmtCOP(n(k.cartera_total)));
@@ -4251,7 +4294,7 @@ async function cargarDashboard(){
   set("d-ventas-sub", `${k.ventas_mes_facturas} facturas · ${rangoTxt}`);
   set("d-recaudo-label", `Recaudo ${etiqueta}`);
   set("d-recaudo", fmtCOP(n(k.recaudo_mes)));
-  set("d-recaudo-sub", `${k.recaudo_mes_n} abonos registrados · ${rangoTxt}`);
+  set("d-recaudo-sub", `${k.recaudo_mes_n} abonos registrados · ${rangoCom}`);
   set("d-pprov-label", `Abonos proveedores ${etiqueta}`);
   set("d-pprov", fmtCOP(n(k.pagos_prov_mes)));
   set("d-pprov-sub", `${k.pagos_prov_mes_n} pagos a proveedores registrados · ${rangoTxt}`);
@@ -4303,7 +4346,7 @@ async function cargarDashboard(){
     ? `<tr><td colspan="9" class="empty-state">Sin comerciales activos.</td></tr>` : cuerpo + filaTotal;
   document.getElementById("d-com-titulo").textContent = `Cartera, ventas y recaudo por comercial — ${MESES[mesNum - 1].toLowerCase()} ${anio} (${rangoTxt})`;
   nota.textContent = `Actualizado ${new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}. Cartera y saldo en bancos son acumulados a hoy; el resto corresponde al mes elegido.`;
-  cargarPanelGerencia(mesISO, anio, mesNum, filas, periodo, conCierres);   // sin esperar: el panel de gerencia se llena aparte
+  cargarPanelGerencia(mesISO, anio, mesNum, filas, periodo, conCierres, periodoCom);   // sin esperar: el panel de gerencia se llena aparte
 }
 document.getElementById("dash-refresh").addEventListener("click", cargarDashboard);
 
@@ -4366,6 +4409,60 @@ document.getElementById("cierre-guardar").addEventListener("click", async () => 
   const m2 = document.getElementById("cierre-msg"); m2.textContent = `${etiquetaMesCierre(mes)} cerrado el ${fechaLarga(fecha)}.`; m2.className = "msg ok";
 });
 
+/* ---- Corte de comisiones y recaudo (parche v30): lo registra la gerente el día que paga las comisiones (30 o 31) ---- */
+function pintarCortes(cortes){
+  const bloque = document.getElementById("cortes-bloque");
+  if(cortes === null){ bloque.style.display = "none"; return; }        // la base aún no tiene el parche v30
+  bloque.style.display = "";
+  CORTES = cortes;
+  const abierto = mesAbiertoDe(cortes);
+  const filas = [...cortes].reverse().map(c => {
+    const p = periodoDeMes(c.mes, cortes);
+    return `<tr><td>${escapar(etiquetaMesCierre(c.mes))}</td><td>${fechaLarga(p.inicio)}</td><td>${fechaLarga(p.fin)}</td><td>Corte registrado</td><td>${escapar(c.actualizado_por || c.creado_por || "—")}</td></tr>`;
+  });
+  if(abierto){
+    const p = periodoDeMes(abierto + "-01", cortes);
+    filas.unshift(`<tr style="background:#E0F2EC;"><td><strong>${escapar(etiquetaMesCierre(abierto + "-01"))}</strong></td><td>${fechaLarga(p.inicio)}</td><td>abierto (hasta hoy)</td><td><strong>Abierto</strong></td><td>—</td></tr>`);
+  }
+  document.querySelector("#cortes-tabla tbody").innerHTML = filas.length ? filas.join("") : `<tr><td colspan="5" class="empty-state">Aún no hay cortes registrados.</td></tr>`;
+  const sel = document.getElementById("corte-mes"), opciones = [];
+  if(abierto) opciones.push({ v: abierto + "-01", t: `${etiquetaMesCierre(abierto + "-01")} (abierto)` });
+  if(cortes.length) opciones.push({ v: cortes[cortes.length - 1].mes, t: `${etiquetaMesCierre(cortes[cortes.length - 1].mes)} (corregir el corte)` });
+  if(!opciones.length){ const d = new Date(); d.setDate(1); opciones.push({ v: isoLocal(d), t: etiquetaMesCierre(isoLocal(d)) }); }
+  sel.innerHTML = opciones.map(o => `<option value="${o.v}">${escapar(o.t)}</option>`).join("");
+  document.getElementById("corte-fecha").max = hoyISO();
+  actualizarHintCorte();
+}
+function actualizarHintCorte(){
+  const hint = document.getElementById("corte-hint"), mes = document.getElementById("corte-mes").value, fecha = document.getElementById("corte-fecha").value;
+  if(!mes || CORTES === null){ hint.textContent = ""; return; }
+  const p = periodoDeMes(mes, CORTES);
+  hint.textContent = fecha
+    ? `La comisión de ${etiquetaMesCierre(mes)} incluirá los pagos del ${fechaLarga(p.inicio)} al ${fechaLarga(fecha)} (ese día cuenta); los siguientes irán al mes siguiente.`
+    : `${etiquetaMesCierre(mes)} empieza el ${fechaLarga(p.inicio)}. Escribe la fecha en que se pagan las comisiones (el 30 o el 31).`;
+}
+["corte-mes", "corte-fecha"].forEach(id => document.getElementById(id).addEventListener("input", actualizarHintCorte));
+document.getElementById("corte-guardar").addEventListener("click", async () => {
+  const msg = document.getElementById("corte-msg"), btn = document.getElementById("corte-guardar");
+  msg.textContent = ""; msg.className = "msg";
+  const mes = document.getElementById("corte-mes").value, fecha = document.getElementById("corte-fecha").value;
+  if(!mes || !fecha){ msg.textContent = "Elige el mes y escribe la fecha de corte."; msg.classList.add("err"); return; }
+  if(fecha > hoyISO()){ msg.textContent = "La fecha de corte no puede ser futura."; msg.classList.add("err"); return; }
+  const p = periodoDeMes(mes, CORTES || []);
+  if(fecha < p.inicio){ msg.textContent = `El corte no puede ser anterior al inicio del mes (${fechaLarga(p.inicio)}).`; msg.classList.add("err"); return; }
+  if(!confirm(`¿Registrar el corte de comisiones de ${etiquetaMesCierre(mes)} el ${fechaLarga(fecha)}?\n\nLa comisión y el recaudo de ${etiquetaMesCierre(mes)} irán del ${fechaLarga(p.inicio)} al ${fechaLarga(fecha)} (ese día cuenta). Los pagos posteriores pasan al mes siguiente.\nQueda registrado quién lo hizo.`)) return;
+  btn.disabled = true;
+  const { error } = await sb.rpc("registrar_corte_comisiones", { p_mes: mes, p_fecha_corte: fecha });
+  btn.disabled = false;
+  if(error){
+    msg.textContent = /function .*registrar_corte_comisiones|schema cache/i.test(error.message || "") ? "Falta el parche v30 en la base de datos: avisa a quien administra el sistema." : "No se pudo registrar el corte: " + error.message;
+    msg.classList.add("err"); return;
+  }
+  document.getElementById("corte-fecha").value = "";
+  await cargarDashboard();
+  const m2 = document.getElementById("corte-msg"); m2.textContent = `Corte de comisiones de ${etiquetaMesCierre(mes)} registrado: ${fechaLarga(fecha)}.`; m2.className = "msg ok";
+});
+
 /* ============================================================
    PANEL DE GERENCIA (lo que tenía el antiguo gerente.html, ahora con los datos reales de la base)
    Por comercial o de todo el equipo: ventas y recaudo del mes, cartera activa, comisión del mes, tendencia de 6 meses,
@@ -4376,7 +4473,8 @@ const fmtCorto = n => n >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? "
 const colorDiasMora = d => d > 90 ? "var(--red)" : d > 30 ? "#B8860B" : "var(--green)";
 const numG = x => parseFloat(x) || 0;
 
-async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conCierres){
+async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conCierres, periodoCom){
+  periodoCom = periodoCom || periodo;      // período de recaudo y comisiones (por defecto, el mismo de ventas)
   const estado = document.getElementById("ger-estado");
   estado.textContent = "Cargando el panel de gerencia...";
   const meses = [];
@@ -4387,8 +4485,8 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conC
   const [tend, comis, cart] = await Promise.all([
     Promise.all(meses.map((m, i) => i === meses.length - 1 ? Promise.resolve({ data: filasCom, error: null }) : sb.rpc(COM_RPC.nombre, { p_mes: m.iso }))),
     traerFilas(() => {      // comisión de los pagos del período (con cierres: desde el día siguiente al cierre anterior hasta el cierre)
-      let q = sb.from("comprobantes").select("id,asesor,comision_valor").gte("fecha_pago", periodo.inicio);
-      if(periodo.fin) q = q.lte("fecha_pago", periodo.fin);
+      let q = sb.from("comprobantes").select("id,asesor,comision_valor").gte("fecha_pago", periodoCom.inicio);
+      if(periodoCom.fin) q = q.lte("fecha_pago", periodoCom.fin);
       return q.order("id");
     }, 20000),
     traerFilas(() => sb.from("cartera").select("n_factura,cliente,comercial,ruta,fecha_factura,saldo_pendiente,dias_mora")
@@ -4401,7 +4499,7 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conC
   const comerciales = (filasCom || []).map(r => r.comercial).filter(c => c !== "SIN ASIGNAR");
   const tieneSinAsignar = (filasCom || []).some(r => r.comercial === "SIN ASIGNAR");   // ventas, pagos y cartera sin comercial activo
   GER.datos = {
-    mesNum, anio, comerciales, tieneSinAsignar, periodo, conCierres, comisPor, comisOk: !comis.error,
+    mesNum, anio, comerciales, tieneSinAsignar, periodo, periodoCom, conCierres, comisPor, comisOk: !comis.error,
     mesActual: Object.fromEntries((filasCom || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes), cartera: numG(r.cartera_saldo) }])),
     tendencia: meses.map((m, i) => ({ etiqueta: m.etiqueta, filas: Object.fromEntries(((tend[i] && tend[i].data) || []).map(r => [r.comercial, { ventas: numG(r.ventas_mes), recaudo: numG(r.recaudo_mes) }])) })),
     cartera: cart.data || [],
@@ -4412,8 +4510,8 @@ async function cargarPanelGerencia(mesISO, anio, mesNum, filasCom, periodo, conC
   document.getElementById("ger-f-ruta").innerHTML = `<option value="todas">Todas</option>` + rutas.map(r => `<option value="${escapar(r)}">${escapar(r)}</option>`).join("");
   document.getElementById("ger-f-cliente").innerHTML = `<option value="todos">Todos</option>` + clientes.map(c => `<option value="${escapar(c)}">${escapar(c)}</option>`).join("");
   GER.ruta = "todas"; GER.cliente = "todos";
-  estado.textContent = `Período del mes elegido en el Dashboard: ${textoPeriodo(periodo)}${conCierres ? (periodo.cerrado ? " (cerrado)" : " (abierto)") : " (mes calendario)"}.` +
-    ` Ventas sin IVA. La cartera es la de hoy.${comis.error ? " · No se pudo leer la comisión del período." : ""}`;
+  estado.textContent = `Ventas (sin IVA): ${textoPeriodo(periodo)}${conCierres ? (periodo.cerrado ? " (cerrado)" : " (abierto)") : " (mes calendario)"}.` +
+    ` Recaudo y comisiones: ${textoPeriodo(periodoCom)}${periodoCom.cerrado ? " (corte registrado)" : " (abierto)"}. La cartera es la de hoy.${comis.error ? " · No se pudo leer la comisión del período." : ""}`;
   renderGerencia();
 }
 
@@ -4486,9 +4584,9 @@ function renderGerencia(){
     const sinAsig = todos ? ((D.mesActual["SIN ASIGNAR"] || {}).ventas || 0) : 0;
     set("g-ventas-label", `Ventas ${todos ? "equipo" : GER.asesor} — ${mesTxt} (sin IVA)`); set("g-ventas", fmtCOP(ventas));
     set("g-ventas-sub", `${textoPeriodo(D.periodo)}${sinAsig ? ` · incluye ${fmtCOP(sinAsig)} sin comercial asignado` : ""}`);
-    set("g-recaudo-label", `Recaudo ${mesTxt}`); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de eficiencia (recaudo / ventas)`);
+    set("g-recaudo-label", `Recaudo ${mesTxt} (${textoPeriodo(D.periodoCom)})`); set("g-recaudo", fmtCOP(recaudo)); set("g-recaudo-sub", `${efic.toFixed(1)} % de eficiencia (recaudo / ventas)`);
     set("g-cartera-label", "Cartera activa"); set("g-cartera", fmtCOP(carteraTot)); set("g-cartera-sub", `${clientesSaldo} clientes con saldo · ${carteraFilas.length} facturas`);
-    set("g-comision-label", `Comisión ${mesTxt}`); set("g-comision", D.comisOk ? fmtCOP(comision) : "—"); set("g-comision-sub", "Por los pagos del período, sobre valor sin IVA");
+    set("g-comision-label", `Comisión ${mesTxt}`); set("g-comision", D.comisOk ? fmtCOP(comision) : "—"); set("g-comision-sub", `Pagos del ${textoPeriodo(D.periodoCom)}, sobre valor sin IVA`);
   } else {
     const sems = D.semanal.semanas, ult = sems.length - 1;
     const facturas = sum(a => (sems[ult].filas[a] || {}).facturas || 0);

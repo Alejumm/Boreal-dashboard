@@ -293,8 +293,8 @@ function renderMensual() {
     <div class="kpis">
       ${[
         {l:"Ventas del mes",   v:fmt(d.ventas),   s:`${d.facturas} facturas · ${d.clientes_unicos} clientes`, c:"#7A7570"},
-        {l:"Recaudo del mes",  v:fmt(d.abonos),   s:`${pct(d.eficiencia)} de lo vendido`,                     c:efC},
-        {l:"Comisión del mes", v:fmt(d.comision), s:"Calculada automáticamente",                              c:"#8B6914"},
+        {l:"Recaudo del mes",  v:fmt(d.abonos),   s:`${pct(d.eficiencia)} de lo vendido${DATA.comision_label ? " · pagos del " + DATA.comision_label : ""}`,                     c:efC},
+        {l:"Comisión del mes", v:fmt(d.comision), s:(DATA.comision_label ? "Pagos del " + DATA.comision_label : "Calculada automáticamente"),                              c:"#8B6914"},
         {l:"Cartera activa",   v:fmt(d.cartera_total), s:`${d.cartera.length} clientes con saldo`,            c:"#C0392B"},
       ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value">${k.v}</div><div class="kpi-sub" style="color:${k.c}">${k.s}</div></div>`).join("")}
     </div>
