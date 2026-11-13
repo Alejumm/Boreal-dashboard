@@ -689,6 +689,10 @@
             <select id="c-hist-sc"><option value="">Todos</option><option value="si">Sí</option><option value="no">No</option></select>
           </div>
           <div class="field">
+            <label>&nbsp;</label>
+            <label style="font-weight:400; display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" id="c-hist-anulados"> Mostrar anulados</label>
+          </div>
+          <div class="field">
             <label>Mes</label>
             <input type="month" id="c-hist-mes">
           </div>
@@ -1615,7 +1619,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v31";
+const APP_VERSION = "v32";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3126,9 +3130,21 @@ async function cargarHistorialComprobantes(){
     return q;
   };
 
-  const consultaFilas = traerFilas(() => filtrar(sb.from("comprobantes")
-    .select("id,fecha_pago,nit,n_factura_ref,cliente,asesor,recibo_caja,banco,entregado_por,valor_pagado,descuento,descuento_tipo,retencion,devolucion_cantidad,devolucion_valor,devolucion_referencia,tipo_pago,grupo_id,liquidacion_id,valor_total_comprobante,verificado_banco,verificado_banco_por,verificado_banco_en,suma_cuadra,suma_cuadra_por,suma_cuadra_en,pago_plasticos"))
-    .order("fecha_pago", { ascending: false }).order("id", { ascending: false }), limiteHist.c);
+  const COLS_COMP = "id,fecha_pago,nit,n_factura_ref,cliente,asesor,recibo_caja,banco,entregado_por,valor_pagado,descuento,descuento_tipo,retencion,devolucion_cantidad,devolucion_valor,devolucion_referencia,tipo_pago,grupo_id,liquidacion_id,valor_total_comprobante,verificado_banco,verificado_banco_por,verificado_banco_en,suma_cuadra,suma_cuadra_por,suma_cuadra_en,pago_plasticos";
+  const mostrarAnulados = document.getElementById("c-hist-anulados").checked;
+  const armarFilasComp = cols => traerFilas(() => {
+    let q = filtrar(sb.from("comprobantes").select(cols));
+    if(COMP_ANULAR.disponible && !mostrarAnulados) q = q.eq("anulado", false);
+    return q.order("fecha_pago", { ascending: false }).order("id", { ascending: false });
+  }, limiteHist.c);
+  const consultaFilas = (async () => {
+    let r = await armarFilasComp(COMP_ANULAR.disponible ? COLS_COMP + ",anulado,anulado_motivo,anulado_por,anulado_en,anulado_original" : COLS_COMP);
+    if(r.error && COMP_ANULAR.disponible){          // la base aún no tiene el parche v31 (anular comprobantes)
+      COMP_ANULAR.disponible = false;
+      r = await armarFilasComp(COLS_COMP);
+    }
+    return r;
+  })();
   const consultaTotal = totalFiltrado(() => filtrar(sb.from("comprobantes").select("id,valor_pagado")), "valor_pagado").catch(() => null);
 
   const [{ data, error }, totales] = await Promise.all([consultaFilas, consultaTotal]);
@@ -3176,12 +3192,72 @@ async function marcarValidacion(id, campo, valor, el){
 }
 /* Pinta las filas del historial de comprobantes con lo que haya en memoria (también se usa al marcar un check). */
 let ES_VALIDADOR = false;
+/* Anular y restaurar comprobantes (parche v31). Anular deja la fila en cero y guarda los valores originales: el pago sale del recaudo,
+   del banco, de la comisión y de los reportes, y la factura recupera su saldo. Si es un pago con varias facturas se anula completo.
+   No se puede si la comisión ya fue liquidada o si tiene los checks de Banco/Suma marcados. */
+const COMP_ANULAR = { disponible: true };
+function botonAnularComp(p){
+  if(!COMP_ANULAR.disponible) return "";
+  const estilo = "padding:5px 12px; font-size:11px; background:var(--red); margin-left:4px;";
+  if(p.verificado_banco || p.suma_cuadra)
+    return `<button type="button" class="btn-submit" disabled style="${estilo} opacity:.45; cursor:not-allowed;" title="Tiene marcado el check de Banco o el de Suma: no se puede anular">Anular</button>`;
+  return `<button type="button" class="btn-submit" data-comp-anular="${p.id}" style="${estilo}">Anular</button>`;
+}
+async function anularComprobante(id){
+  const p = historialComprobantesCache.find(x => x.id === id);
+  if(!p) return;
+  const msg = document.getElementById("c-val-msg");
+  const motivo = (prompt(`Motivo para anular el comprobante de ${p.cliente} por ${fmtCOP(p.valor_pagado)} (obligatorio). Ejemplo: registrado dos veces.`, "") || "").trim();
+  if(!motivo) return;
+  if(!confirm(`¿Anular el comprobante de ${p.cliente} (${fmtCOP(p.valor_pagado)}${p.n_factura_ref ? ", factura " + p.n_factura_ref : ""})?\n\n` +
+              `Sale del recaudo, del saldo en bancos y de la comisión, y la factura recupera su saldo.${p.grupo_id ? "\nEs un pago con varias facturas: se anula el pago completo." : ""}\nQueda guardado con el motivo y se puede restaurar.`)) return;
+  const { error } = await sb.rpc("anular_comprobante", { p_id: id, p_motivo: motivo });
+  msg.className = "hint";
+  if(error){
+    msg.textContent = /function .*anular_comprobante|schema cache/i.test(error.message || "") ? "Falta el parche v31 en la base de datos: avisa a quien administra el sistema." : "No se pudo anular: " + error.message;
+    msg.classList.add("lookup-warn"); return;
+  }
+  msg.textContent = `Comprobante anulado: ${p.cliente} (${fmtCOP(p.valor_pagado)}).`; msg.classList.add("lookup-ok");
+  cargarHistorialComprobantes(); cargarHistorialVentas(); cargarCartera();
+}
+async function restaurarComprobante(id){
+  const p = historialComprobantesCache.find(x => x.id === id);
+  if(!p) return;
+  const msg = document.getElementById("c-val-msg");
+  const orig = (p.anulado_original && p.anulado_original.valor_pagado) || 0;
+  if(!confirm(`¿Restaurar el comprobante de ${p.cliente} por ${fmtCOP(orig)}? Vuelve a contar en el recaudo, el banco y la comisión, y se aplica de nuevo a la factura.${p.grupo_id ? "\nEs un pago con varias facturas: se restaura el pago completo." : ""}`)) return;
+  const { error } = await sb.rpc("restaurar_comprobante", { p_id: id });
+  msg.className = "hint";
+  if(error){ msg.textContent = "No se pudo restaurar: " + error.message; msg.classList.add("lookup-warn"); return; }
+  msg.textContent = `Comprobante restaurado: ${p.cliente} (${fmtCOP(orig)}).`; msg.classList.add("lookup-ok");
+  cargarHistorialComprobantes(); cargarHistorialVentas(); cargarCartera();
+}
+document.querySelector("#c-recientes tbody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-comp-anular], button[data-comp-restaurar]");
+  if(!b) return;
+  if(b.dataset.compAnular) anularComprobante(parseInt(b.dataset.compAnular, 10));
+  else restaurarComprobante(parseInt(b.dataset.compRestaurar, 10));
+});
+document.getElementById("c-hist-anulados").addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); });
+
 function pintarHistorialComprobantes(){
   const tbody = document.querySelector("#c-recientes tbody");
+  const fechaLocalC = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
   tbody.innerHTML = historialComprobantesCache.map(p => {
+    if(p.anulado){
+      const orig = (p.anulado_original && p.anulado_original.valor_pagado) || 0;
+      return `<tr class="gasto-anulado">
+        <td><s>${p.fecha_pago}</s></td><td><s>${p.n_factura_ref||"—"}</s></td><td><s>${p.cliente}</s></td>
+        <td>${p.asesor||"—"}</td><td class="num"><s>${fmtCOP(orig)}</s></td>
+        <td class="num"><s>${fmtCOP(p.valor_total_comprobante != null ? p.valor_total_comprobante : orig)}</s></td>
+        <td><span class="badge badge-pend">Anulado</span><br><span class="hint">${escapar("Anulado por " + (p.anulado_por || "—") + (p.anulado_en ? " el " + fechaLocalC(p.anulado_en) : "") + ": " + (p.anulado_motivo || ""))}</span></td>
+        <td>${etiquetaBanco(p.banco)}</td><td class="chk"></td><td class="chk"></td>
+        <td><button type="button" class="btn-submit" data-comp-restaurar="${p.id}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Restaurar</button></td>
+      </tr>`;
+    }
     let accion;
     if(p.liquidacion_id) accion = `<span class="hint">Liquidado</span>`;
-    else accion = `<button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarComprobante(${p.id})"${p.grupo_id ? ' title="Este pago cubre varias facturas: los datos compartidos se cambian en todas"' : ""}>Editar</button>${p.grupo_id ? '<div class="hint" style="margin-top:3px;">Pago múltiple</div>' : ""}`;
+    else accion =`<button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarComprobante(${p.id})"${p.grupo_id ? ' title="Este pago cubre varias facturas: los datos compartidos se cambian en todas"' : ""}>Editar</button>${botonAnularComp(p)}${p.grupo_id ? '<div class="hint" style="margin-top:3px;">Pago múltiple</div>' : ""}`;
     return `<tr>
       <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
       <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
@@ -4012,13 +4088,18 @@ async function cargarPendientesLiquidar(){
 
   tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Buscando...</td></tr>`;
 
-  const { data, error } = await sb.from("comprobantes")
-    .select("id,fecha_pago,n_factura_ref,cliente,valor_pagado,dias_transcurridos,comision_pct,comision_valor")
-    .eq("asesor", asesor)
-    .is("liquidacion_id", null)
-    .not("comision_valor", "is", null)
-    .gte("fecha_pago", desde).lte("fecha_pago", hasta)
-    .order("fecha_pago", { ascending: true });
+  const pedirPendientes = conAnulados => {
+    let q = sb.from("comprobantes")
+      .select("id,fecha_pago,n_factura_ref,cliente,valor_pagado,dias_transcurridos,comision_pct,comision_valor")
+      .eq("asesor", asesor)
+      .is("liquidacion_id", null)
+      .not("comision_valor", "is", null)
+      .gte("fecha_pago", desde).lte("fecha_pago", hasta);
+    if(conAnulados) q = q.eq("anulado", false);          // los comprobantes anulados no se liquidan (parche v31)
+    return q.order("fecha_pago", { ascending: true });
+  };
+  let { data, error } = await pedirPendientes(true);
+  if(error && /anulado/i.test(error.message || "")) ({ data, error } = await pedirPendientes(false));   // base sin el parche v31
 
   if(error){
     tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Error: ${error.message}</td></tr>`;
