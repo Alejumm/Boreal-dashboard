@@ -175,8 +175,8 @@
   .dash-sub-h{ font-family:'Oswald',sans-serif; font-size:13px; margin:0 0 10px; color:var(--steel-900); }
   /* pagos múltiples agrupados en el historial de comprobantes */
   tr.fila-grupo > td:not(.val-azul):not(.val-verde):not(.val-ambos){ background:#F6F9FD; }   /* no tapa los colores de Banco/Suma del valor aplicado */
-  tr.fila-grupo-ini > td{ border-top:2px solid var(--steel-700); }
-  td.celda-grupo{ vertical-align:middle; background:#EAF1FB !important; border-left:3px solid var(--orange); border-right:1px solid var(--line); }
+  tr.fila-grupo-ini > td{ border-top:1px solid #C9D3E3; }
+  td.celda-grupo{ vertical-align:middle; background:#EAF1FB !important; }
   .dash-periodo{ display:inline-block; padding:7px 12px; margin-bottom:6px; background:var(--steel-900); color:#fff; font-size:12.5px; border-left:4px solid var(--orange); }
   .dash-periodo.abierto{ border-left-color:var(--green); }
   .ger-btns{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
@@ -1623,7 +1623,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v34";
+const APP_VERSION = "v35";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3284,7 +3284,7 @@ function filaComprobante(p, bloque, i){
   if(p.anulado){
     const orig = (p.anulado_original && p.anulado_original.valor_pagado) || 0;
     const celdaTotal = (!esGrupo || primera)
-      ? `<td class="num celda-grupo"${esGrupo ? ` rowspan="${n}"` : ""}><s>${fmtCOP(valorTotal != null ? valorTotal : orig)}</s>${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
+      ? `<td class="num${esPagoMultiple ? " celda-grupo" : ""}"${esGrupo ? ` rowspan="${n}"` : ""}><s>${fmtCOP(valorTotal != null ? valorTotal : orig)}</s>${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
     return `<tr class="gasto-anulado${claseGrupo}">
       <td><s>${p.fecha_pago}</s></td><td><s>${p.n_factura_ref||"—"}</s></td><td><s>${p.cliente}</s></td>
       <td>${p.asesor||"—"}</td><td class="num"><s>${fmtCOP(orig)}</s></td>
@@ -3306,7 +3306,7 @@ function filaComprobante(p, bloque, i){
     if(!algunaLiquidada) accion += botonAnularComp({ id: p.id, verificado_banco: bloque.some(x => x.verificado_banco), suma_cuadra: bloque.some(x => x.suma_cuadra) }, true);
   }
   const celdaTotal = (!esGrupo || primera)
-    ? `<td class="num celda-grupo"${esGrupo ? ` rowspan="${n}"` : ""}>${fmtCOP(valorTotal)}${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
+    ? `<td class="num${esPagoMultiple ? " celda-grupo" : ""}"${esGrupo ? ` rowspan="${n}"` : ""}>${fmtCOP(valorTotal)}${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
   // Checks: en un pago múltiple hay UNO de Banco y UNO de Suma para todo el pago (celda combinada); un clic marca todas las facturas
   const celdasChecks = !esPagoMultiple
     ? `<td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>`
