@@ -174,7 +174,7 @@
   .dash-dos{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
   .dash-sub-h{ font-family:'Oswald',sans-serif; font-size:13px; margin:0 0 10px; color:var(--steel-900); }
   /* pagos múltiples agrupados en el historial de comprobantes */
-  tr.fila-grupo > td{ background:#F6F9FD; }
+  tr.fila-grupo > td:not(.val-azul):not(.val-verde):not(.val-ambos){ background:#F6F9FD; }   /* no tapa los colores de Banco/Suma del valor aplicado */
   tr.fila-grupo-ini > td{ border-top:2px solid var(--steel-700); }
   td.celda-grupo{ vertical-align:middle; background:#EAF1FB !important; border-left:3px solid var(--orange); border-right:1px solid var(--line); }
   .dash-periodo{ display:inline-block; padding:7px 12px; margin-bottom:6px; background:var(--steel-900); color:#fff; font-size:12.5px; border-left:4px solid var(--orange); }
@@ -1623,7 +1623,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v33";
+const APP_VERSION = "v34";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3176,6 +3176,32 @@ function casillaValidacion(p, campo){
   const titulo = p[campo] ? `Validado${por ? " por " + por : ""}${en ? " el " + new Date(en).toLocaleDateString("es-CO") : ""}` : (ES_VALIDADOR ? "Marcar" : "Solo la gerente puede marcar");
   return `<input type="checkbox" class="chk-val" data-id="${p.id}" data-campo="${campo}" ${p[campo] ? "checked" : ""} ${ES_VALIDADOR ? "" : "disabled"} title="${titulo.replace(/"/g, "&quot;")}">`;
 }
+/* Casilla de un pago múltiple: una sola para todo el pago. Marcada si todas las filas lo están; "a medias" si solo algunas. */
+function casillaGrupo(bloque, campo){
+  const todas = bloque.every(x => x[campo]), alguna = bloque.some(x => x[campo]);
+  const titulo = alguna && !todas ? "Solo algunas facturas de este pago están marcadas: un clic las marca todas"
+               : (todas ? "Marcado en todo el pago" : (ES_VALIDADOR ? "Marcar todo el pago" : "Solo la gerente puede marcar"));
+  return `<input type="checkbox" class="chk-val" data-grupo="${escapar(bloque[0].grupo_id)}" data-campo="${campo}" ${todas ? "checked" : ""} ${alguna && !todas ? 'data-indet="1"' : ""} ${ES_VALIDADOR ? "" : "disabled"} title="${titulo}">`;
+}
+async function marcarValidacionGrupo(grupo, campo, valor, el){
+  const msg = document.getElementById("c-val-msg");
+  msg.textContent = ""; msg.className = "hint";
+  el.disabled = true;
+  let q = sb.from("comprobantes").update({ [campo]: valor }).eq("grupo_id", grupo);
+  if(COMP_ANULAR.disponible) q = q.eq("anulado", false);     // los anulados no se tocan
+  const { data, error } = await q.select("id,verificado_banco,verificado_banco_por,verificado_banco_en,suma_cuadra,suma_cuadra_por,suma_cuadra_en");
+  if(error || !data || data.length === 0){
+    el.disabled = !ES_VALIDADOR;
+    msg.textContent = (error && (error.code === "42501" || /gerente/i.test(error.message || "")))
+      ? "Solo la gerente puede validar comprobantes."
+      : "No se pudo guardar la validación" + (error ? ": " + error.message : ".");
+    msg.className = "hint lookup-warn";
+    pintarHistorialComprobantes();          // vuelve a mostrar el estado real
+    return;
+  }
+  data.forEach(d => { const fila = historialComprobantesCache.find(p => p.id === d.id); if(fila) Object.assign(fila, d); });
+  pintarHistorialComprobantes();
+}
 async function marcarValidacion(id, campo, valor, el){
   const msg = document.getElementById("c-val-msg");
   msg.textContent = ""; msg.className = "hint";
@@ -3281,13 +3307,19 @@ function filaComprobante(p, bloque, i){
   }
   const celdaTotal = (!esGrupo || primera)
     ? `<td class="num celda-grupo"${esGrupo ? ` rowspan="${n}"` : ""}>${fmtCOP(valorTotal)}${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
+  // Checks: en un pago múltiple hay UNO de Banco y UNO de Suma para todo el pago (celda combinada); un clic marca todas las facturas
+  const celdasChecks = !esPagoMultiple
+    ? `<td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>`
+    : ((!esGrupo || primera)
+        ? `<td class="chk celda-grupo-chk"${esGrupo ? ` rowspan="${n}"` : ""}>${casillaGrupo(bloque, "verificado_banco")}</td><td class="chk celda-grupo-chk"${esGrupo ? ` rowspan="${n}"` : ""}>${casillaGrupo(bloque, "suma_cuadra")}</td>`
+        : "");
   return `<tr class="${claseGrupo.trim()}">
     <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
     <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
     ${celdaTotal}
     <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}${p.pago_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td>
     <td>${etiquetaBanco(p.banco)}</td>
-    <td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>
+    ${celdasChecks}
     <td>${accion}</td>
   </tr>`;
 }
@@ -3302,10 +3334,14 @@ function pintarHistorialComprobantes(){
     } else bloques.push([p]);
   });
   tbody.innerHTML = bloques.map(b => b.map((p, i) => filaComprobante(p, b, i)).join("")).join("");
+  tbody.querySelectorAll('input[data-indet="1"]').forEach(el => { el.indeterminate = true; });     // "a medias": solo algunas facturas marcadas
 }
 document.querySelector("#c-recientes tbody").addEventListener("change", e => {
   const el = e.target;
-  if(el.classList && el.classList.contains("chk-val")) marcarValidacion(parseInt(el.dataset.id, 10), el.dataset.campo, el.checked, el);
+  if(el.classList && el.classList.contains("chk-val")){
+    if(el.dataset.grupo) marcarValidacionGrupo(el.dataset.grupo, el.dataset.campo, el.checked, el);      // pago múltiple: un check para todo el pago
+    else marcarValidacion(parseInt(el.dataset.id, 10), el.dataset.campo, el.checked, el);
+  }
 });
 ["c-hist-vb", "c-hist-sc", "c-hist-pl"].forEach(id => document.getElementById(id).addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); }));
 document.getElementById("c-hist-buscar").addEventListener("click", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); });
