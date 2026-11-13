@@ -173,6 +173,10 @@
   .t-rojo{ background:#FBE9E7; color:#A32D2D; }
   .dash-dos{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
   .dash-sub-h{ font-family:'Oswald',sans-serif; font-size:13px; margin:0 0 10px; color:var(--steel-900); }
+  /* pagos múltiples agrupados en el historial de comprobantes */
+  tr.fila-grupo > td{ background:#F6F9FD; }
+  tr.fila-grupo-ini > td{ border-top:2px solid var(--steel-700); }
+  td.celda-grupo{ vertical-align:middle; background:#EAF1FB !important; border-left:3px solid var(--orange); border-right:1px solid var(--line); }
   .dash-periodo{ display:inline-block; padding:7px 12px; margin-bottom:6px; background:var(--steel-900); color:#fff; font-size:12.5px; border-left:4px solid var(--orange); }
   .dash-periodo.abierto{ border-left-color:var(--green); }
   .ger-btns{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
@@ -1619,7 +1623,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v32";
+const APP_VERSION = "v33";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3196,20 +3200,22 @@ let ES_VALIDADOR = false;
    del banco, de la comisión y de los reportes, y la factura recupera su saldo. Si es un pago con varias facturas se anula completo.
    No se puede si la comisión ya fue liquidada o si tiene los checks de Banco/Suma marcados. */
 const COMP_ANULAR = { disponible: true };
-function botonAnularComp(p){
+function botonAnularComp(p, pagoCompleto){
   if(!COMP_ANULAR.disponible) return "";
   const estilo = "padding:5px 12px; font-size:11px; background:var(--red); margin-left:4px;";
+  const texto = pagoCompleto ? "Anular pago completo" : "Anular";
   if(p.verificado_banco || p.suma_cuadra)
-    return `<button type="button" class="btn-submit" disabled style="${estilo} opacity:.45; cursor:not-allowed;" title="Tiene marcado el check de Banco o el de Suma: no se puede anular">Anular</button>`;
-  return `<button type="button" class="btn-submit" data-comp-anular="${p.id}" style="${estilo}">Anular</button>`;
+    return `<button type="button" class="btn-submit" disabled style="${estilo} opacity:.45; cursor:not-allowed;" title="Tiene marcado el check de Banco o el de Suma: no se puede anular">${texto}</button>`;
+  return `<button type="button" class="btn-submit" data-comp-anular="${p.id}" style="${estilo}"${pagoCompleto ? ' title="Anula todas las facturas de este pago"' : ""}>${texto}</button>`;
 }
 async function anularComprobante(id){
   const p = historialComprobantesCache.find(x => x.id === id);
   if(!p) return;
   const msg = document.getElementById("c-val-msg");
-  const motivo = (prompt(`Motivo para anular el comprobante de ${p.cliente} por ${fmtCOP(p.valor_pagado)} (obligatorio). Ejemplo: registrado dos veces.`, "") || "").trim();
+  const valorShow = p.grupo_id ? (p.valor_total_comprobante != null ? p.valor_total_comprobante : p.valor_pagado) : p.valor_pagado;   // en un pago múltiple se anula el pago completo
+  const motivo = (prompt(`Motivo para anular el comprobante de ${p.cliente} por ${fmtCOP(valorShow)} (obligatorio). Ejemplo: registrado dos veces.`, "") || "").trim();
   if(!motivo) return;
-  if(!confirm(`¿Anular el comprobante de ${p.cliente} (${fmtCOP(p.valor_pagado)}${p.n_factura_ref ? ", factura " + p.n_factura_ref : ""})?\n\n` +
+  if(!confirm(`¿Anular el comprobante de ${p.cliente} (${fmtCOP(valorShow)}${p.n_factura_ref ? ", factura " + p.n_factura_ref : ""})?\n\n` +
               `Sale del recaudo, del saldo en bancos y de la comisión, y la factura recupera su saldo.${p.grupo_id ? "\nEs un pago con varias facturas: se anula el pago completo." : ""}\nQueda guardado con el motivo y se puede restaurar.`)) return;
   const { error } = await sb.rpc("anular_comprobante", { p_id: id, p_motivo: motivo });
   msg.className = "hint";
@@ -3240,34 +3246,62 @@ document.querySelector("#c-recientes tbody").addEventListener("click", e => {
 });
 document.getElementById("c-hist-anulados").addEventListener("change", () => { limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); });
 
+/* Historial de comprobantes: un pago que cubre varias facturas (mismo grupo_id) se muestra como un bloque.
+   El "Valor comprobante" sale UNA sola vez (celda combinada) y "Anular" actúa sobre el pago completo. */
+function filaComprobante(p, bloque, i){
+  const n = bloque.length, esGrupo = n > 1, primera = i === 0, esPagoMultiple = !!p.grupo_id;   // esGrupo: hay varias filas visibles; esPagoMultiple: el pago cubre varias facturas (aunque otras filas no estén en esta página)
+  const etiquetaMulti = n > 1 ? `Pago múltiple · ${n} facturas` : "Pago múltiple";
+  const fechaLocalC = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
+  const claseGrupo = esGrupo ? ` fila-grupo${primera ? " fila-grupo-ini" : ""}` : "";
+  const valorTotal = p.valor_total_comprobante != null ? p.valor_total_comprobante : p.valor_pagado;
+
+  if(p.anulado){
+    const orig = (p.anulado_original && p.anulado_original.valor_pagado) || 0;
+    const celdaTotal = (!esGrupo || primera)
+      ? `<td class="num celda-grupo"${esGrupo ? ` rowspan="${n}"` : ""}><s>${fmtCOP(valorTotal != null ? valorTotal : orig)}</s>${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
+    return `<tr class="gasto-anulado${claseGrupo}">
+      <td><s>${p.fecha_pago}</s></td><td><s>${p.n_factura_ref||"—"}</s></td><td><s>${p.cliente}</s></td>
+      <td>${p.asesor||"—"}</td><td class="num"><s>${fmtCOP(orig)}</s></td>
+      ${celdaTotal}
+      <td><span class="badge badge-pend">Anulado</span><br><span class="hint">${escapar("Anulado por " + (p.anulado_por || "—") + (p.anulado_en ? " el " + fechaLocalC(p.anulado_en) : "") + ": " + (p.anulado_motivo || ""))}</span></td>
+      <td>${etiquetaBanco(p.banco)}</td><td class="chk"></td><td class="chk"></td>
+      <td>${!esGrupo || primera ? `<button type="button" class="btn-submit" data-comp-restaurar="${p.id}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Restaurar${esPagoMultiple ? " todo" : ""}</button>` : ""}</td>
+    </tr>`;
+  }
+
+  const btnEditar = `<button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarComprobante(${p.id})"${esPagoMultiple ? ' title="Este pago cubre varias facturas: los datos compartidos se cambian en todas"' : ""}>Editar</button>`;
+  let accion;
+  if(p.liquidacion_id) accion = `<span class="hint">Liquidado</span>`;
+  else accion = btnEditar;
+  // Anular: en un pago múltiple solo en la primera fila y vale para todo el pago
+  if(!esPagoMultiple) { if(!p.liquidacion_id) accion += botonAnularComp(p); }
+  else if(primera || !esGrupo){
+    const algunaLiquidada = bloque.some(x => x.liquidacion_id);
+    if(!algunaLiquidada) accion += botonAnularComp({ id: p.id, verificado_banco: bloque.some(x => x.verificado_banco), suma_cuadra: bloque.some(x => x.suma_cuadra) }, true);
+  }
+  const celdaTotal = (!esGrupo || primera)
+    ? `<td class="num celda-grupo"${esGrupo ? ` rowspan="${n}"` : ""}>${fmtCOP(valorTotal)}${esPagoMultiple ? `<div class="hint">${etiquetaMulti}</div>` : ""}</td>` : "";
+  return `<tr class="${claseGrupo.trim()}">
+    <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
+    <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
+    ${celdaTotal}
+    <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}${p.pago_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td>
+    <td>${etiquetaBanco(p.banco)}</td>
+    <td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>
+    <td>${accion}</td>
+  </tr>`;
+}
 function pintarHistorialComprobantes(){
   const tbody = document.querySelector("#c-recientes tbody");
-  const fechaLocalC = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
-  tbody.innerHTML = historialComprobantesCache.map(p => {
-    if(p.anulado){
-      const orig = (p.anulado_original && p.anulado_original.valor_pagado) || 0;
-      return `<tr class="gasto-anulado">
-        <td><s>${p.fecha_pago}</s></td><td><s>${p.n_factura_ref||"—"}</s></td><td><s>${p.cliente}</s></td>
-        <td>${p.asesor||"—"}</td><td class="num"><s>${fmtCOP(orig)}</s></td>
-        <td class="num"><s>${fmtCOP(p.valor_total_comprobante != null ? p.valor_total_comprobante : orig)}</s></td>
-        <td><span class="badge badge-pend">Anulado</span><br><span class="hint">${escapar("Anulado por " + (p.anulado_por || "—") + (p.anulado_en ? " el " + fechaLocalC(p.anulado_en) : "") + ": " + (p.anulado_motivo || ""))}</span></td>
-        <td>${etiquetaBanco(p.banco)}</td><td class="chk"></td><td class="chk"></td>
-        <td><button type="button" class="btn-submit" data-comp-restaurar="${p.id}" style="padding:5px 12px; font-size:11px; background:var(--steel-800);">Restaurar</button></td>
-      </tr>`;
-    }
-    let accion;
-    if(p.liquidacion_id) accion = `<span class="hint">Liquidado</span>`;
-    else accion =`<button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarComprobante(${p.id})"${p.grupo_id ? ' title="Este pago cubre varias facturas: los datos compartidos se cambian en todas"' : ""}>Editar</button>${botonAnularComp(p)}${p.grupo_id ? '<div class="hint" style="margin-top:3px;">Pago múltiple</div>' : ""}`;
-    return `<tr>
-      <td>${p.fecha_pago}</td><td>${p.n_factura_ref||"—"}</td><td>${p.cliente}</td>
-      <td>${p.asesor||"—"}</td><td class="num ${p.suma_cuadra && p.verificado_banco ? "val-ambos" : p.suma_cuadra ? "val-verde" : p.verificado_banco ? "val-azul" : ""}">${fmtCOP(p.valor_pagado)}</td>
-      <td class="num">${fmtCOP(p.valor_total_comprobante != null ? p.valor_total_comprobante : p.valor_pagado)}</td>
-      <td>${p.tipo_pago ? `<span class="badge ${p.tipo_pago==='Pago total'?'badge-pag':'badge-pend'}">${p.tipo_pago}</span>` : "—"}${p.devolucion_valor ? `<br><span class="hint" title="${(p.devolucion_referencia||"").replace(/"/g,"&quot;")}">Dev. ${fmtCOP(p.devolucion_valor)}</span>` : ""}${p.retencion ? `<br><span class="hint">Impuesto ${fmtCOP(p.retencion)}</span>` : ""}${p.pago_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}</td>
-      <td>${etiquetaBanco(p.banco)}</td>
-      <td class="chk">${casillaValidacion(p, "verificado_banco")}</td><td class="chk">${casillaValidacion(p, "suma_cuadra")}</td>
-      <td>${accion}</td>
-    </tr>`;
-  }).join("");
+  // Las filas del mismo pago (grupo_id) quedan juntas, bajo la primera que aparece en la lista
+  const bloques = [], porGrupo = new Map();
+  historialComprobantesCache.forEach(p => {
+    if(p.grupo_id){
+      if(!porGrupo.has(p.grupo_id)){ const b = []; porGrupo.set(p.grupo_id, b); bloques.push(b); }
+      porGrupo.get(p.grupo_id).push(p);
+    } else bloques.push([p]);
+  });
+  tbody.innerHTML = bloques.map(b => b.map((p, i) => filaComprobante(p, b, i)).join("")).join("");
 }
 document.querySelector("#c-recientes tbody").addEventListener("change", e => {
   const el = e.target;
