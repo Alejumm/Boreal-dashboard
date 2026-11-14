@@ -197,6 +197,7 @@
     <div class="tab" data-view="proveedores">Proveedores</div>
     <div class="tab" data-view="gastos">Gastos</div>
     <div class="tab" data-view="liquidar">Liquidar comisiones</div>
+    <div class="tab" data-view="ventascli">Ventas por cliente</div>
   </nav>
 
   <main>
@@ -559,6 +560,48 @@
             </thead>
             <tbody><tr><td colspan="9" class="empty-state">Cargando cartera...</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VENTAS POR CLIENTE (histórico para pronóstico) ---------- -->
+    <section class="view" id="view-ventascli">
+      <div class="panel">
+        <h2>Ventas por cliente</h2>
+        <div class="hint" style="margin:-6px 0 10px;">Facturas y valor facturado por cliente / NIT, semana a semana o mes a mes. Las semanas van de lunes a domingo (se rotula con el lunes).</div>
+        <div class="filters">
+          <div class="field">
+            <label>Ver por</label>
+            <select id="vc-modo"><option value="mes">Mes</option><option value="semana">Semana</option></select>
+          </div>
+          <div class="field">
+            <label>Períodos</label>
+            <select id="vc-periodos"></select>
+          </div>
+          <div class="field">
+            <label>Mostrar</label>
+            <select id="vc-medida"><option value="valor">Valor</option><option value="cant">Cantidad de facturas</option></select>
+          </div>
+          <div class="field">
+            <label>Comercial</label>
+            <select id="vc-comercial"><option value="">Todos</option></select>
+          </div>
+          <div class="field grow">
+            <label>Buscar cliente / NIT</label>
+            <input type="text" id="vc-search" placeholder="Escribe para filtrar...">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="vc-refresh" style="padding:10px 20px;">Actualizar</button>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="vc-excel" style="padding:10px 20px;background:var(--green);" title="Descarga mensual y semanal, con cantidad y valor">Descargar Excel</button>
+          </div>
+        </div>
+        <div class="hint" id="vc-msg" style="margin:-4px 0 8px;"></div>
+        <div class="table-wrap">
+          <table id="vc-tabla"><thead></thead><tbody><tr><td class="empty-state">Abre la pestaña para cargar...</td></tr></tbody></table>
         </div>
       </div>
     </section>
@@ -1053,6 +1096,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     if(tab.dataset.view === "comprobantes") cargarHistorialComprobantes();
     if(tab.dataset.view === "gastos") cargarHistorialGastos();
     if(tab.dataset.view === "liquidar") inicializarLiquidarComisiones();
+    if(tab.dataset.view === "ventascli") cargarVentasCliente(false);
   });
 });
 
@@ -1993,6 +2037,149 @@ async function descargarCarteraExcel(){
   } finally { btn.disabled = false; }
 }
 document.getElementById("cart-excel").addEventListener("click", descargarCarteraExcel);
+
+/* ============================================================
+   VENTAS POR CLIENTE: facturas y valor por cliente/NIT, por semana y por mes
+   (solo lee `ventas`; sin IVA aparte: usa valor_factura tal como está guardado)
+   ============================================================ */
+let vcFilas = null;           // ventas traídas (se cachean hasta "Actualizar")
+const VC_MESES_ABR = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+const vcPad = n => String(n).padStart(2, "0");
+// "2026-11-08" -> {y,m,d} sin zonas horarias
+function vcPartes(t){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t || ""); return m ? { y: +m[1], m: +m[2], d: +m[3] } : null; }
+function vcLunesISO(t){
+  const p = vcPartes(t); if(!p) return null;
+  const f = new Date(Date.UTC(p.y, p.m - 1, p.d));
+  f.setUTCDate(f.getUTCDate() - ((f.getUTCDay() + 6) % 7));
+  return f.toISOString().slice(0, 10);
+}
+function vcHoyISO(){ const h = new Date(); return `${h.getFullYear()}-${vcPad(h.getMonth() + 1)}-${vcPad(h.getDate())}`; }
+function vcSumarDias(iso, dias){ const p = vcPartes(iso); const f = new Date(Date.UTC(p.y, p.m - 1, p.d)); f.setUTCDate(f.getUTCDate() + dias); return f.toISOString().slice(0, 10); }
+// Lista de períodos [{clave, rotulo}] de más antiguo a más reciente, terminando en el actual
+function vcPeriodos(modo, n){
+  const hoy = vcHoyISO(), out = [];
+  if(modo === "semana"){
+    const lunes = vcLunesISO(hoy);
+    for(let i = n - 1; i >= 0; i--){ const l = vcSumarDias(lunes, -7 * i); const p = vcPartes(l); out.push({ clave: l, rotulo: `${vcPad(p.d)}/${vcPad(p.m)}` }); }
+  } else {
+    const p = vcPartes(hoy);
+    for(let i = n - 1; i >= 0; i--){ const f = new Date(Date.UTC(p.y, p.m - 1 - i, 1)); const y = f.getUTCFullYear(), m = f.getUTCMonth() + 1; out.push({ clave: `${y}-${vcPad(m)}`, rotulo: `${VC_MESES_ABR[m - 1]} ${String(y).slice(2)}` }); }
+  }
+  return out;
+}
+const vcClave = (modo, fecha) => modo === "semana" ? vcLunesISO(fecha) : ((fecha || "").slice(0, 7) || null);
+
+/* Agrupa por NIT (o por nombre si no hay NIT). Devuelve filas con cant[] y valor[] alineados a `periodos`. */
+function vcAgrupar(modo, periodos, filtroCom, texto){
+  const idx = new Map(periodos.map((p, i) => [p.clave, i]));
+  const grupos = new Map();
+  const q = claveProv(texto);
+  (vcFilas || []).forEach(v => {
+    if(/^anulad/i.test(v.estado || "")) return;
+    if(filtroCom && (v.comercial || "") !== filtroCom) return;
+    const i = idx.get(vcClave(modo, v.fecha_factura));
+    if(i === undefined) return;
+    const nit = (v.nit || "").trim(), nombre = (v.cliente || "").trim() || "(sin nombre)";
+    if(q && !claveProv(nit + " " + nombre).includes(q)) return;
+    const k = nit || ("N:" + claveProv(nombre));
+    let g = grupos.get(k);
+    if(!g){ g = { nit, cliente: nombre, comercial: v.comercial || "", cant: periodos.map(() => 0), valor: periodos.map(() => 0), ult: "" }; grupos.set(k, g); }
+    g.cant[i] += 1; g.valor[i] += parseFloat(v.valor_factura) || 0;
+    if((v.fecha_factura || "") > g.ult){ g.ult = v.fecha_factura || ""; g.cliente = nombre; g.comercial = v.comercial || g.comercial; }
+  });
+  const filas = [...grupos.values()];
+  filas.forEach(g => { g.totCant = g.cant.reduce((a, b) => a + b, 0); g.totValor = g.valor.reduce((a, b) => a + b, 0); });
+  filas.sort((a, b) => b.totValor - a.totValor || a.cliente.localeCompare(b.cliente));
+  return filas;
+}
+
+function vcOpcionesPeriodos(){
+  const modo = document.getElementById("vc-modo").value, sel = document.getElementById("vc-periodos");
+  const ops = modo === "semana" ? [8, 13, 26, 52] : [6, 12, 24];
+  const pred = modo === "semana" ? 13 : 12;
+  sel.innerHTML = ops.map(n => `<option value="${n}"${n === pred ? " selected" : ""}>Últimos ${n} ${modo === "semana" ? "semanas" : "meses"}</option>`).join("");
+}
+
+function pintarVentasCliente(){
+  if(!vcFilas) return;
+  const modo = document.getElementById("vc-modo").value, n = +document.getElementById("vc-periodos").value;
+  const medida = document.getElementById("vc-medida").value;
+  const periodos = vcPeriodos(modo, n);
+  const filas = vcAgrupar(modo, periodos, document.getElementById("vc-comercial").value, document.getElementById("vc-search").value);
+  const fmtCelda = x => x ? (medida === "valor" ? fmtCOP(x) : String(x)) : '<span style="opacity:.3">·</span>';
+  const th = document.querySelector("#vc-tabla thead"), tb = document.querySelector("#vc-tabla tbody");
+  th.innerHTML = `<tr><th>Cliente</th><th>NIT</th><th>Comercial</th>${periodos.map(p => `<th class="num">${esc(p.rotulo)}</th>`).join("")}<th class="num">Total</th><th class="num">Promedio</th></tr>`;
+  if(!filas.length){ tb.innerHTML = `<tr><td class="empty-state" colspan="${periodos.length + 5}">No hay ventas en el período con esos filtros.</td></tr>`; document.getElementById("vc-msg").textContent = ""; return; }
+  const tot = periodos.map(() => 0); let totGen = 0;
+  const cuerpo = filas.map(g => {
+    const arr = medida === "valor" ? g.valor : g.cant, total = medida === "valor" ? g.totValor : g.totCant;
+    arr.forEach((x, i) => tot[i] += x); totGen += total;
+    const prom = total / periodos.length;
+    return `<tr><td>${esc(g.cliente)}</td><td>${esc(g.nit)}</td><td>${esc(g.comercial)}</td>${arr.map(x => `<td class="num">${fmtCelda(x)}</td>`).join("")}<td class="num"><b>${medida === "valor" ? fmtCOP(total) : total}</b></td><td class="num">${medida === "valor" ? fmtCOP(prom) : prom.toFixed(1)}</td></tr>`;
+  }).join("");
+  const pie = `<tr style="font-weight:600;background:var(--bg-soft,#f4f4f0)"><td colspan="3">Total (${filas.length} clientes)</td>${tot.map(x => `<td class="num">${medida === "valor" ? fmtCOP(x) : x}</td>`).join("")}<td class="num">${medida === "valor" ? fmtCOP(totGen) : totGen}</td><td class="num">${medida === "valor" ? fmtCOP(totGen / periodos.length) : (totGen / periodos.length).toFixed(1)}</td></tr>`;
+  tb.innerHTML = cuerpo + pie;
+  document.getElementById("vc-msg").textContent = `${filas.length} clientes · ${periodos.length} ${modo === "semana" ? "semanas" : "meses"} · Promedio = Total ÷ períodos mostrados (cuenta los períodos sin ventas).`;
+}
+
+async function cargarVentasCliente(forzar){
+  const msg = document.getElementById("vc-msg");
+  if(!document.getElementById("vc-periodos").options.length) vcOpcionesPeriodos();
+  if(vcFilas && !forzar){ pintarVentasCliente(); return; }
+  msg.textContent = "Cargando ventas...";
+  try{
+    vcFilas = await traerTodo("ventas", "id,fecha_factura,valor_factura,nit,cliente,comercial,estado");
+    const sel = document.getElementById("vc-comercial"), actual = sel.value;
+    const coms = [...new Set(vcFilas.map(v => v.comercial).filter(Boolean))].sort();
+    sel.innerHTML = `<option value="">Todos</option>` + coms.map(c => `<option>${esc(c)}</option>`).join("");
+    sel.value = coms.includes(actual) ? actual : "";
+    pintarVentasCliente();
+  } catch(e){ vcFilas = null; msg.textContent = "No se pudieron cargar las ventas: " + e.message; }
+}
+
+function vcHoja(XLSX, modo, medida, periodos, filas){
+  const encab = ["Cliente", "NIT", "Comercial", ...periodos.map(p => modo === "semana" ? "Sem. " + p.rotulo : p.rotulo), "Total", "Promedio"];
+  const aoa = [encab, ...filas.map(g => {
+    const arr = medida === "valor" ? g.valor : g.cant, total = medida === "valor" ? g.totValor : g.totCant;
+    return [g.cliente, g.nit, g.comercial, ...arr, total, total / periodos.length];
+  })];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const fmt = medida === "valor" ? "#,##0" : "0.0";
+  for(let r = 1; r < aoa.length; r++) for(let c = 3; c < encab.length; c++){
+    const ref = XLSX.utils.encode_cell({ r, c }); if(ws[ref]) ws[ref].z = (medida === "cant" && c < encab.length - 1) ? "0" : fmt;
+  }
+  ws["!cols"] = [{ wch: 34 }, { wch: 14 }, { wch: 12 }, ...periodos.map(() => ({ wch: 11 })), { wch: 14 }, { wch: 12 }];
+  ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: encab.length - 1 } }) };
+  ws["!freeze"] = { xSplit: 3, ySplit: 1 };
+  return ws;
+}
+async function descargarVentasClienteExcel(){
+  const msg = document.getElementById("vc-msg"), btn = document.getElementById("vc-excel");
+  if(!vcFilas){ msg.textContent = "Primero espera a que carguen las ventas."; return; }
+  btn.disabled = true; msg.textContent = "Preparando el archivo...";
+  try{
+    const XLSX = await cargarLibreriaExcel();
+    const wb = XLSX.utils.book_new();
+    const com = document.getElementById("vc-comercial").value, txt = document.getElementById("vc-search").value;
+    const juegos = [["mes", 12, "Mensual"], ["semana", 26, "Semanal"]];
+    let clientes = 0;
+    juegos.forEach(([modo, n, nombre]) => {
+      const periodos = vcPeriodos(modo, n), filas = vcAgrupar(modo, periodos, com, txt);
+      clientes = Math.max(clientes, filas.length);
+      XLSX.utils.book_append_sheet(wb, vcHoja(XLSX, modo, "cant", periodos, filas), nombre + " facturas");
+      XLSX.utils.book_append_sheet(wb, vcHoja(XLSX, modo, "valor", periodos, filas), nombre + " valor");
+    });
+    const archivo = `ventas_por_cliente${com ? "_" + com.replace(/[^\w-]+/g, "_") : ""}_${vcHoyISO()}.xlsx`;
+    XLSX.writeFile(wb, archivo);
+    msg.textContent = `Se descargó ${archivo}: 4 hojas (mensual y semanal, facturas y valor), ${clientes} clientes. Respeta el comercial y la búsqueda; los períodos son últimos 12 meses y 26 semanas.`;
+  } catch(e){ msg.textContent = "No se pudo generar el Excel: " + e.message; }
+  finally { btn.disabled = false; }
+}
+document.getElementById("vc-modo").addEventListener("change", () => { vcOpcionesPeriodos(); pintarVentasCliente(); });
+["vc-periodos", "vc-medida", "vc-comercial"].forEach(id => document.getElementById(id).addEventListener("change", pintarVentasCliente));
+document.getElementById("vc-search").addEventListener("input", pintarVentasCliente);
+document.getElementById("vc-refresh").addEventListener("click", () => cargarVentasCliente(true));
+document.getElementById("vc-excel").addEventListener("click", descargarVentasClienteExcel);
 
 /* ============================================================
    PROVEEDORES: datalist de autocompletado
