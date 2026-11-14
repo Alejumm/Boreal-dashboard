@@ -86,6 +86,8 @@
   main{ max-width:1180px; margin:0 auto; padding:28px 24px 60px; }
   .view{ display:none; }
   .view.active{ display:block; }
+  .aviso-sistema{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; padding:9px 20px; background:#E8F4FD; border-bottom:1px solid #9CC9EA; color:#1F4E79; font-size:13px; }
+  .aviso-sistema button{ background:#1F4E79; color:#fff; border:0; padding:6px 14px; font-weight:600; cursor:pointer; }
 
   .panel{
     background:#fff; border:1px solid var(--line); border-radius:3px; padding:22px 24px; margin-bottom:20px;
@@ -185,10 +187,13 @@
   <header class="topbar">
     <div class="brand">NEXORA <span>·</span> Contable</div>
     <div class="user-box">
+      <span id="app-version" title="Versión del sistema" style="opacity:.6; font-size:11px; margin-right:10px;"></span>
       <span id="user-email">—</span>
       <button id="logout-btn">Cerrar sesión</button>
     </div>
   </header>
+
+  <div class="aviso-sistema" id="aviso-version" style="display:none;" role="status"></div>
 
   <nav class="tabs">
     <div class="tab active" data-view="ventas">Registrar venta</div>
@@ -1078,6 +1083,31 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   await sb.auth.signOut();
   showLogin();
 });
+
+/* ============================================================
+   ACTUALIZACIÓN AUTOMÁTICA
+   Versión de este archivo; se compara con version.json del sitio cada 10 min y avisa si hay una nueva.
+   Al cambiar el HTML: subir APP_VERSION aquí y en version.json (misma carpeta).
+   ============================================================ */
+const APP_VERSION = "v1";
+document.getElementById("app-version").textContent = APP_VERSION;
+async function verificarVersionApp(){
+  try{
+    const r = await fetch("version.json?ts=" + Date.now(), { cache: "no-store" });
+    if(!r.ok) return;
+    const j = await r.json();
+    const box = document.getElementById("aviso-version");
+    if(j && j.version && j.version !== APP_VERSION){
+      box.innerHTML = `<span>Hay una versión nueva del sistema (<strong>${esc(j.version)}</strong>). Termina lo que estás registrando y actualiza.</span><button type="button" id="aviso-version-btn">Actualizar ahora</button>`;
+      box.style.display = "flex";
+      document.getElementById("aviso-version-btn").onclick = () => { location.href = location.pathname + "?v=" + Date.now(); };
+    } else {
+      box.style.display = "none";
+    }
+  } catch(e){ /* abierto desde un archivo local o sin conexión: no se avisa */ }
+}
+setInterval(verificarVersionApp, 10 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if(!document.hidden && document.getElementById("app").style.display !== "none") verificarVersionApp(); });
 
 checkSession();
 
