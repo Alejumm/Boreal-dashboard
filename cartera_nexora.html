@@ -167,36 +167,24 @@ async function cargarDatos() {
     </div>`;
 
   try {
-    // 1. Validar acceso sin exponer la clave real al navegador
-    const { data: acceso, error: errAcceso } = await sb.rpc("validar_acceso_asesor", {
+    // 1. Una sola función en la base valida la clave y devuelve los datos del asesor
+    //    (el navegador ya no lee las tablas directamente)
+    const { data: datos, error: errDatos } = await sb.rpc("reporte_asesor_datos", {
       p_nombre: ID_ASESOR, p_clave: CLAVE,
     });
-    if (errAcceso) throw errAcceso;
-    if (!acceso || acceso.length === 0) {
+    if (errDatos) throw errDatos;
+    if (!datos) {
       throw new Error("Acceso denegado. Verifica el identificador y la clave del link.");
     }
-    const nombreAsesor = acceso[0].nombre;
-
-    document.getElementById("content").innerHTML = `
-      <div class="loading"><div class="spinner"></div><div class="loading-text">Leyendo datos...</div></div>`;
+    const nombreAsesor = datos.asesor;
 
     const hoy = new Date();
     const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const desde13m = new Date(hoy.getFullYear(), hoy.getMonth()-13, 1);
 
-    const [ventasResp, comprobResp, carteraResp, rankingResp] = await Promise.all([
-      sb.from("ventas").select("fecha_factura,valor_factura,nit,n_factura,estado")
-        .eq("comercial", nombreAsesor).gte("fecha_factura", toISO(desde13m)),
-      sb.from("comprobantes").select("fecha_pago,valor_pagado,comision_valor")
-        .eq("asesor", nombreAsesor).gte("fecha_pago", toISO(desde13m)),
-      sb.from("cartera").select("cliente,n_factura,fecha_factura,saldo_pendiente,dias_mora,ruta")
-        .eq("comercial", nombreAsesor),
-      sb.from("ventas_mensuales_asesor").select("asesor,ventas").eq("mes", toISO(mesActual)),
-    ]);
-    if (ventasResp.error) throw ventasResp.error;
-    if (comprobResp.error) throw comprobResp.error;
-    if (carteraResp.error) throw carteraResp.error;
-    if (rankingResp.error) throw rankingResp.error;
+    const ventasResp = { data: datos.ventas };
+    const comprobResp = { data: datos.comprobantes };
+    const carteraResp = { data: datos.cartera };
+    const rankingResp = { data: datos.ranking };
 
     const ventasRows = ventasResp.data || [];
     const comprobRows = comprobResp.data || [];
