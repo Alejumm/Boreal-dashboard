@@ -818,7 +818,6 @@
             <tfoot class="tfoot-totales"></tfoot>
           </table>
         </div>
-        <div class="hint" style="margin-top:8px;">En un pago solo se edita la fecha, el estado y las observaciones. Si el valor o la factura están mal, avísame (hay que anular el pago y registrarlo de nuevo).</div>
       </div>
 
       <div class="panel">
@@ -1130,8 +1129,9 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
    Una sola ventana genérica. Cada registro define sus campos y cómo se guarda.
    - Factura de compra: se editan fecha, vencimiento, valor y observaciones (no proveedor ni N° factura:
      los pagos ya hechos se ligan por ahí). El saldo lo recalcula la base (valor - abono); el estado se ajusta aquí.
-   - Pago a proveedor: solo fecha, estado y observaciones. El trigger de la base solo suma al abono cuando el pago
-     se INSERTA; cambiar el valor o la factura dejaría el abono desalineado, por eso no se permite.
+   - Pago a proveedor: se edita todo menos el proveedor. Requiere el SQL C1 (trigger trg_ajustar_pago_proveedor, que al
+     EDITAR revierte el abono anterior y aplica el nuevo); sin él, cambiar valor/factura dejaría el abono desalineado.
+     Aquí se valida que la factura exista y que el valor no supere su saldo disponible.
    - Proveedor: no se edita el nombre (lo usan compras y pagos como texto).
    ============================================================ */
 let gastosCache = [], proveedoresAdminCache = [];
@@ -1241,18 +1241,33 @@ document.querySelector("#rp-tabla-pagos tbody").addEventListener("click", e => {
   if(p.estado && !ops.some(o => o[0] === p.estado)) ops.push([p.estado, p.estado]);
   abrirEdicion({
     titulo: "Editar pago a proveedor",
-    nota: "Solo se editan fecha, estado y observaciones. El valor y la factura no se cambian porque ya movieron el saldo de la factura.",
+    nota: "Si cambias el valor o la factura, la base corrige solo el abono y el saldo de las facturas (la anterior y la nueva).",
     campos: [
       { tipo: "lectura", label: "Proveedor", valor: p.proveedor },
-      { tipo: "lectura", label: "N° Factura", valor: p.n_factura || "—" },
-      { tipo: "lectura", label: "Valor pagado", valor: fmtCOP(p.valor_pagado) },
+      { id: "n_factura", label: "N° Factura", valor: p.n_factura || "" },
+      { id: "valor_pagado", label: "Valor pagado", tipo: "number", valor: p.valor_pagado, req: true },
       { id: "fecha_pago", label: "Fecha de pago", tipo: "date", valor: p.fecha_pago, req: true },
       { id: "estado", label: "Estado", tipo: "select", valor: p.estado || "", opciones: ops },
       { id: "observaciones", label: "Observaciones", valor: p.observaciones || "", ancho: true },
     ],
     guardar: async v => {
-      const err = await actualizarFila("pagos_proveedores", p.id, { fecha_pago: v.fecha_pago, estado: v.estado || null, observaciones: v.observaciones || null, mes_comercial: mesDe(v.fecha_pago) });
-      if(!err) cargarResumenProveedores();
+      if(!(v.valor_pagado > 0)) return "El valor pagado debe ser mayor que cero.";
+      const viejoNf = (p.n_factura || "").trim(), nuevoNf = v.n_factura.trim();
+      const viejoVal = parseFloat(p.valor_pagado) || 0;
+      if(nuevoNf && (nuevoNf !== viejoNf || v.valor_pagado !== viejoVal)){
+        // Lee la factura destino tal como está AHORA en la base (no la copia de la pantalla)
+        const { data: f, error: ef } = await sb.from("compras_proveedores").select("valor,abono").eq("proveedor", p.proveedor).eq("n_factura", nuevoNf).maybeSingle();
+        if(ef) return "No se pudo comprobar la factura: " + ef.message;
+        if(!f){
+          if(nuevoNf !== viejoNf) return `No existe la factura "${nuevoNf}" de ${p.proveedor}. Revisa el número.`;
+        } else {
+          // Si sigue en la misma factura, el valor anterior de este pago ya está dentro del abono
+          const disponible = (parseFloat(f.valor) || 0) - (parseFloat(f.abono) || 0) + (nuevoNf === viejoNf ? viejoVal : 0);
+          if(v.valor_pagado > disponible + 0.5) return `El valor (${fmtCOP(v.valor_pagado)}) supera lo que se le puede pagar a esa factura (${fmtCOP(Math.max(disponible, 0))}).`;
+        }
+      }
+      const err = await actualizarFila("pagos_proveedores", p.id, { n_factura: nuevoNf || null, valor_pagado: v.valor_pagado, fecha_pago: v.fecha_pago, estado: v.estado || null, observaciones: v.observaciones || null, mes_comercial: mesDe(v.fecha_pago) });
+      if(!err){ cargarResumenProveedores(); cargarCarteraProveedores(); }
       return err;
     },
   });
@@ -1303,7 +1318,7 @@ document.querySelector("#pvd-tabla tbody").addEventListener("click", e => {
    Versión de este archivo; se compara con version.json del sitio cada 10 min y avisa si hay una nueva.
    Al cambiar el HTML: subir APP_VERSION aquí y en version.json (misma carpeta).
    ============================================================ */
-const APP_VERSION = "v2";
+const APP_VERSION = "v3";
 document.getElementById("app-version").textContent = APP_VERSION;
 async function verificarVersionApp(){
   try{
