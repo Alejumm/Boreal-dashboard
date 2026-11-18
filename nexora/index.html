@@ -88,6 +88,11 @@
   .view.active{ display:block; }
   .aviso-sistema{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; padding:9px 20px; background:#E8F4FD; border-bottom:1px solid #9CC9EA; color:#1F4E79; font-size:13px; }
   .aviso-sistema button{ background:#1F4E79; color:#fff; border:0; padding:6px 14px; font-weight:600; cursor:pointer; }
+  .modal-fondo{ position:fixed; inset:0; background:rgba(20,25,35,.55); display:none; align-items:center; justify-content:center; z-index:60; padding:16px; }
+  .modal-fondo.abierto{ display:flex; }
+  .modal-caja{ background:#fff; width:100%; max-width:640px; max-height:90vh; overflow:auto; padding:22px; }
+  .modal-caja h3{ margin:0 0 6px; }
+  .btn-editar{ padding:5px 12px; font-size:11px; background:var(--steel-800); }
 
   .panel{
     background:#fff; border:1px solid var(--line); border-radius:3px; padding:22px 24px; margin-bottom:20px;
@@ -194,6 +199,20 @@
   </header>
 
   <div class="aviso-sistema" id="aviso-version" style="display:none;" role="status"></div>
+
+  <!-- Ventana genérica para editar registros (gastos, facturas y pagos de proveedores, proveedores) -->
+  <div class="modal-fondo" id="ed-modal" role="dialog" aria-modal="true" aria-labelledby="ed-titulo">
+    <div class="modal-caja">
+      <h3 id="ed-titulo">Editar</h3>
+      <div class="hint" id="ed-nota" style="margin-bottom:12px;"></div>
+      <div class="grid" id="ed-campos"></div>
+      <div class="actions-row">
+        <button type="button" class="btn-submit" id="ed-guardar">Guardar cambios</button>
+        <button type="button" class="btn-submit" id="ed-cancelar" style="background:var(--steel-800);">Cancelar</button>
+      </div>
+      <div class="msg" id="ed-msg"></div>
+    </div>
+  </div>
 
   <nav class="tabs">
     <div class="tab active" data-view="ventas">Registrar venta</div>
@@ -785,8 +804,8 @@
         <div class="sub-titulo">Facturas del proveedor (pagadas y pendientes)</div>
         <div class="table-wrap">
           <table id="rp-tabla-facturas">
-            <thead><tr><th>Fecha</th><th>Proveedor</th><th>N° Factura</th><th>Vencimiento</th><th class="num">Valor</th><th class="num">Abono</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
-            <tbody><tr><td colspan="8" class="empty-state">Cargando...</td></tr></tbody>
+            <thead><tr><th>Fecha</th><th>Proveedor</th><th>N° Factura</th><th>Vencimiento</th><th class="num">Valor</th><th class="num">Abono</th><th class="num">Saldo</th><th>Estado</th><th></th></tr></thead>
+            <tbody><tr><td colspan="9" class="empty-state">Cargando...</td></tr></tbody>
             <tfoot class="tfoot-totales"></tfoot>
           </table>
         </div>
@@ -794,11 +813,33 @@
         <div class="sub-titulo">Pagos realizados</div>
         <div class="table-wrap">
           <table id="rp-tabla-pagos">
-            <thead><tr><th>Fecha pago</th><th>Proveedor</th><th>N° Factura</th><th class="num">Valor pagado</th><th>Estado</th><th>Observaciones</th></tr></thead>
-            <tbody><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
+            <thead><tr><th>Fecha pago</th><th>Proveedor</th><th>N° Factura</th><th class="num">Valor pagado</th><th>Estado</th><th>Observaciones</th><th></th></tr></thead>
+            <tbody><tr><td colspan="7" class="empty-state">Cargando...</td></tr></tbody>
             <tfoot class="tfoot-totales"></tfoot>
           </table>
         </div>
+        <div class="hint" style="margin-top:8px;">En un pago solo se edita la fecha, el estado y las observaciones. Si el valor o la factura están mal, avísame (hay que anular el pago y registrarlo de nuevo).</div>
+      </div>
+
+      <div class="panel">
+        <h2>Proveedores (datos de contacto)</h2>
+        <div class="filters">
+          <div class="field grow">
+            <label>Buscar proveedor / NIT</label>
+            <input type="text" id="pvd-search" placeholder="Escribe para filtrar...">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="pvd-refresh" style="padding:10px 20px;">Actualizar</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="pvd-tabla">
+            <thead><tr><th>Nombre</th><th>NIT</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th><th>Activo</th><th></th></tr></thead>
+            <tbody><tr><td colspan="7" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin-top:8px;">El nombre no se edita aquí: las facturas y pagos lo usan para ligarse al proveedor.</div>
       </div>
 
     </section>
@@ -883,8 +924,8 @@
         </div>
         <div class="table-wrap">
           <table id="ge-recientes">
-            <thead><tr><th><input type="checkbox" id="ge-chk-todos" aria-label="Seleccionar todos los gastos visibles"></th><th>Fecha</th><th>Concepto</th><th class="num">Valor</th><th>Estado</th></tr></thead>
-            <tbody><tr><td colspan="5" class="empty-state">Cargando historial...</td></tr></tbody>
+            <thead><tr><th><input type="checkbox" id="ge-chk-todos" aria-label="Seleccionar todos los gastos visibles"></th><th>Fecha</th><th>Concepto</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty-state">Cargando historial...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1085,11 +1126,184 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 });
 
 /* ============================================================
+   EDITAR: gastos, facturas y pagos de proveedores, proveedores
+   Una sola ventana genérica. Cada registro define sus campos y cómo se guarda.
+   - Factura de compra: se editan fecha, vencimiento, valor y observaciones (no proveedor ni N° factura:
+     los pagos ya hechos se ligan por ahí). El saldo lo recalcula la base (valor - abono); el estado se ajusta aquí.
+   - Pago a proveedor: solo fecha, estado y observaciones. El trigger de la base solo suma al abono cuando el pago
+     se INSERTA; cambiar el valor o la factura dejaría el abono desalineado, por eso no se permite.
+   - Proveedor: no se edita el nombre (lo usan compras y pagos como texto).
+   ============================================================ */
+let gastosCache = [], proveedoresAdminCache = [];
+let edGuardar = null;
+
+function abrirEdicion({ titulo, nota, campos, guardar }){
+  document.getElementById("ed-titulo").textContent = titulo;
+  document.getElementById("ed-nota").textContent = nota || "";
+  document.getElementById("ed-campos").innerHTML = campos.map(c => {
+    const id = "ed-f-" + c.id;
+    if(c.tipo === "lectura") return `<div class="field"><label>${esc(c.label)}</label><input type="text" value="${esc(c.valor)}" disabled></div>`;
+    if(c.tipo === "select") return `<div class="field"><label>${esc(c.label)}</label><select id="${id}">${c.opciones.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(c.valor ?? "") ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>`;
+    const extra = c.tipo === "number" ? ' step="0.01"' : "";
+    return `<div class="field${c.ancho ? " full" : ""}"><label>${esc(c.label)}${c.req ? " *" : ""}</label><input id="${id}" type="${c.tipo || "text"}"${extra} value="${esc(c.valor ?? "")}"${c.req ? " required" : ""}></div>`;
+  }).join("");
+  const msg = document.getElementById("ed-msg"); msg.textContent = ""; msg.className = "msg";
+  edGuardar = { campos, guardar };
+  document.getElementById("ed-modal").classList.add("abierto");
+}
+function cerrarEdicion(){ document.getElementById("ed-modal").classList.remove("abierto"); edGuardar = null; }
+document.getElementById("ed-cancelar").addEventListener("click", cerrarEdicion);
+document.getElementById("ed-modal").addEventListener("mousedown", e => { if(e.target.id === "ed-modal") cerrarEdicion(); });
+document.addEventListener("keydown", e => { if(e.key === "Escape" && edGuardar) cerrarEdicion(); });
+document.getElementById("ed-guardar").addEventListener("click", async () => {
+  if(!edGuardar) return;
+  const msg = document.getElementById("ed-msg"), btn = document.getElementById("ed-guardar");
+  const vals = {};
+  for(const c of edGuardar.campos){
+    if(c.tipo === "lectura") continue;
+    const v = document.getElementById("ed-f-" + c.id).value.trim();
+    if(c.req && !v){ msg.textContent = `Falta: ${c.label}.`; msg.className = "msg err"; return; }
+    vals[c.id] = c.tipo === "number" ? (v === "" ? null : parseFloat(v)) : v;
+  }
+  btn.disabled = true; btn.textContent = "Guardando...";
+  msg.textContent = ""; msg.className = "msg";
+  try{
+    const error = await edGuardar.guardar(vals);
+    if(error){ msg.textContent = error; msg.className = "msg err"; return; }
+    cerrarEdicion();
+  } catch(e){ msg.textContent = "Error al guardar: " + e.message; msg.className = "msg err"; }
+  finally { btn.disabled = false; btn.textContent = "Guardar cambios"; }
+});
+// Actualiza una fila y comprueba que de verdad se haya modificado (RLS puede dejar 0 filas sin dar error)
+async function actualizarFila(tabla, id, cambios){
+  const { data, error } = await sb.from(tabla).update(cambios).eq("id", id).select("id");
+  if(error) return "Error al guardar: " + error.message;
+  if(!data || data.length === 0) return "No se guardó ningún cambio (¿tu sesión tiene permiso?). Recarga e inténtalo de nuevo.";
+  return null;
+}
+
+/* ---- Gastos ---- */
+document.querySelector("#ge-recientes tbody").addEventListener("click", e => {
+  const b = e.target.closest("[data-edit-gasto]"); if(!b) return;
+  const g = gastosCache.find(x => String(x.id) === b.dataset.editGasto); if(!g) return;
+  abrirEdicion({
+    titulo: "Editar gasto",
+    campos: [
+      { id: "fecha", label: "Fecha", tipo: "date", valor: g.fecha, req: true },
+      { id: "concepto", label: "Concepto", valor: g.concepto, req: true, ancho: true },
+      { id: "valor", label: "Valor", tipo: "number", valor: g.valor, req: true },
+      { id: "estado", label: "Estado", tipo: "select", valor: g.estado || "", opciones: [["", "Sin especificar"], ["Pagado", "Pagado"], ["Pendiente", "Pendiente"], ...(g.estado && !["Pagado", "Pendiente"].includes(g.estado) ? [[g.estado, g.estado]] : [])] },
+      { id: "observaciones", label: "Observaciones", valor: g.observaciones || "", ancho: true },
+    ],
+    guardar: async v => {
+      const err = await actualizarFila("gastos_empresa", g.id, { fecha: v.fecha, concepto: v.concepto, valor: v.valor, estado: v.estado || null, observaciones: v.observaciones || null, mes_comercial: mesDe(v.fecha) });
+      if(!err) cargarHistorialGastos();
+      return err;
+    },
+  });
+});
+
+/* ---- Facturas de compra ---- */
+document.querySelector("#rp-tabla-facturas tbody").addEventListener("click", e => {
+  const b = e.target.closest("[data-edit-compra]"); if(!b) return;
+  const c = rpCompras.find(x => String(x.id) === b.dataset.editCompra); if(!c) return;
+  const abono = parseFloat(c.abono) || 0;
+  abrirEdicion({
+    titulo: "Editar factura de proveedor",
+    nota: `Proveedor y N° de factura no se cambian. Abonado hasta ahora: ${fmtCOP(abono)} (lo mueven los pagos). El saldo se recalcula solo.`,
+    campos: [
+      { tipo: "lectura", label: "Proveedor", valor: c.proveedor },
+      { tipo: "lectura", label: "N° Factura", valor: c.n_factura },
+      { id: "fecha", label: "Fecha", tipo: "date", valor: c.fecha, req: true },
+      { id: "vencimiento", label: "Vencimiento", tipo: "date", valor: c.vencimiento || "" },
+      { id: "valor", label: "Valor", tipo: "number", valor: c.valor, req: true },
+      { id: "observaciones", label: "Observaciones", valor: c.observaciones || "", ancho: true },
+    ],
+    guardar: async v => {
+      if(!(v.valor > 0)) return "El valor debe ser mayor que cero.";
+      if(v.valor < abono) return `El valor no puede ser menor que lo ya abonado (${fmtCOP(abono)}). Si el pago está mal, avísame.`;
+      const err = await actualizarFila("compras_proveedores", c.id, {
+        fecha: v.fecha, vencimiento: v.vencimiento || null, valor: v.valor,
+        observaciones: v.observaciones || null, mes_comercial: mesDe(v.fecha),
+        estado: abono >= v.valor ? "Pagado" : "Pendiente",
+      });
+      if(!err){ cargarResumenProveedores(); cargarCarteraProveedores(); }
+      return err;
+    },
+  });
+});
+
+/* ---- Pagos a proveedores ---- */
+document.querySelector("#rp-tabla-pagos tbody").addEventListener("click", e => {
+  const b = e.target.closest("[data-edit-pago]"); if(!b) return;
+  const p = rpPagos.find(x => String(x.id) === b.dataset.editPago); if(!p) return;
+  const ops = [["", "Sin especificar"], ["Abono", "Abono"], ["Pago total", "Pago total"]];
+  if(p.estado && !ops.some(o => o[0] === p.estado)) ops.push([p.estado, p.estado]);
+  abrirEdicion({
+    titulo: "Editar pago a proveedor",
+    nota: "Solo se editan fecha, estado y observaciones. El valor y la factura no se cambian porque ya movieron el saldo de la factura.",
+    campos: [
+      { tipo: "lectura", label: "Proveedor", valor: p.proveedor },
+      { tipo: "lectura", label: "N° Factura", valor: p.n_factura || "—" },
+      { tipo: "lectura", label: "Valor pagado", valor: fmtCOP(p.valor_pagado) },
+      { id: "fecha_pago", label: "Fecha de pago", tipo: "date", valor: p.fecha_pago, req: true },
+      { id: "estado", label: "Estado", tipo: "select", valor: p.estado || "", opciones: ops },
+      { id: "observaciones", label: "Observaciones", valor: p.observaciones || "", ancho: true },
+    ],
+    guardar: async v => {
+      const err = await actualizarFila("pagos_proveedores", p.id, { fecha_pago: v.fecha_pago, estado: v.estado || null, observaciones: v.observaciones || null, mes_comercial: mesDe(v.fecha_pago) });
+      if(!err) cargarResumenProveedores();
+      return err;
+    },
+  });
+});
+
+/* ---- Proveedores (datos de contacto) ---- */
+async function cargarProveedoresAdmin(){
+  const tbody = document.querySelector("#pvd-tabla tbody");
+  const { data, error } = await sb.from("proveedores").select("id,nombre,nit,telefono,correo,ciudad,activo").order("nombre");
+  if(error){ tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Error cargando: ${esc(error.message)}</td></tr>`; return; }
+  proveedoresAdminCache = data || [];
+  renderProveedoresAdmin();
+}
+function renderProveedoresAdmin(){
+  const q = claveProv(document.getElementById("pvd-search").value);
+  const lista = proveedoresAdminCache.filter(p => !q || claveProv(`${p.nombre} ${p.nit || ""}`).includes(q));
+  document.querySelector("#pvd-tabla tbody").innerHTML = lista.length === 0
+    ? `<tr><td colspan="7" class="empty-state">No hay proveedores con ese filtro.</td></tr>`
+    : lista.map(p => `<tr><td>${esc(p.nombre)}</td><td>${esc(p.nit || "—")}</td><td>${esc(p.telefono || "—")}</td><td>${esc(p.correo || "—")}</td><td>${esc(p.ciudad || "—")}</td>
+        <td>${p.activo === false ? "No" : "Sí"}</td>
+        <td><button type="button" class="btn-submit btn-editar" data-edit-prov="${p.id}">Editar</button></td></tr>`).join("");
+}
+document.getElementById("pvd-search").addEventListener("input", renderProveedoresAdmin);
+document.getElementById("pvd-refresh").addEventListener("click", cargarProveedoresAdmin);
+document.querySelector("#pvd-tabla tbody").addEventListener("click", e => {
+  const b = e.target.closest("[data-edit-prov]"); if(!b) return;
+  const p = proveedoresAdminCache.find(x => String(x.id) === b.dataset.editProv); if(!p) return;
+  abrirEdicion({
+    titulo: "Editar proveedor",
+    campos: [
+      { tipo: "lectura", label: "Nombre", valor: p.nombre },
+      { id: "nit", label: "NIT", valor: p.nit || "" },
+      { id: "telefono", label: "Teléfono", valor: p.telefono || "" },
+      { id: "correo", label: "Correo", valor: p.correo || "" },
+      { id: "ciudad", label: "Ciudad", valor: p.ciudad || "" },
+      { id: "activo", label: "Activo", tipo: "select", valor: p.activo === false ? "no" : "si", opciones: [["si", "Sí"], ["no", "No"]] },
+    ],
+    guardar: async v => {
+      const err = await actualizarFila("proveedores", p.id, { nit: v.nit || null, telefono: v.telefono || null, correo: v.correo || null, ciudad: v.ciudad || null, activo: v.activo !== "no" });
+      if(!err) cargarProveedoresAdmin();
+      return err;
+    },
+  });
+});
+
+/* ============================================================
    ACTUALIZACIÓN AUTOMÁTICA
    Versión de este archivo; se compara con version.json del sitio cada 10 min y avisa si hay una nueva.
    Al cambiar el HTML: subir APP_VERSION aquí y en version.json (misma carpeta).
    ============================================================ */
-const APP_VERSION = "v1";
+const APP_VERSION = "v2";
 document.getElementById("app-version").textContent = APP_VERSION;
 async function verificarVersionApp(){
   try{
@@ -1121,7 +1335,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     tab.classList.add("active");
     document.getElementById("view-" + tab.dataset.view).classList.add("active");
     if(tab.dataset.view === "cartera") cargarCartera();
-    if(tab.dataset.view === "proveedores"){ cargarCarteraProveedores(); cargarListaProveedores(); cargarResumenProveedores(); }
+    if(tab.dataset.view === "proveedores"){ cargarCarteraProveedores(); cargarListaProveedores(); cargarResumenProveedores(); cargarProveedoresAdmin(); }
     if(tab.dataset.view === "ventas") cargarHistorialVentas();
     if(tab.dataset.view === "comprobantes") cargarHistorialComprobantes();
     if(tab.dataset.view === "gastos") cargarHistorialGastos();
@@ -2408,7 +2622,7 @@ document.getElementById("ge-chk-todos").addEventListener("change", e => {
 async function cargarHistorialGastos(){
   const miReq = ++reqHistGastos;
   const tbody = document.querySelector("#ge-recientes tbody");
-  tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Buscando...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Buscando...</td></tr>`;
   actualizarSeleccionGastos();
 
   const concepto = document.getElementById("ge-hist-concepto").value.trim();
@@ -2422,7 +2636,7 @@ async function cargarHistorialGastos(){
     return q;
   };
 
-  const consultaFilas = filtrar(sb.from("gastos_empresa").select("id,fecha,concepto,valor,estado"))
+  const consultaFilas = filtrar(sb.from("gastos_empresa").select("id,fecha,concepto,valor,estado,observaciones"))
     .order("fecha", { ascending: false })
     .limit(300);
   const consultaTotal = totalFiltrado(() => filtrar(sb.from("gastos_empresa").select("id,valor")), "valor").catch(() => null);
@@ -2431,20 +2645,22 @@ async function cargarHistorialGastos(){
   if(miReq !== reqHistGastos) return;
 
   if(error){
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Error al buscar: ${error.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Error al buscar: ${error.message}</td></tr>`;
     pintarTotales("ge-hist", null, 0);
     return;
   }
   pintarTotales("ge-hist", totales, (data || []).length);
   if(!data || data.length === 0){
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No hay gastos con esos filtros.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No hay gastos con esos filtros.</td></tr>`;
     actualizarSeleccionGastos();
     return;
   }
   tbody.innerHTML = data.map(p => `<tr>
     <td><input type="checkbox" class="ge-chk" data-valor="${p.valor}" aria-label="Seleccionar gasto ${p.concepto}"></td>
     <td>${p.fecha}</td><td>${p.concepto}</td><td class="num">${fmtCOP(p.valor)}</td><td>${p.estado||"—"}</td>
+    <td><button type="button" class="btn-submit btn-editar" data-edit-gasto="${p.id}">Editar</button></td>
   </tr>`).join("");
+  gastosCache = data;
   actualizarSeleccionGastos();
 }
 document.getElementById("ge-hist-buscar").addEventListener("click", cargarHistorialGastos);
@@ -2499,7 +2715,7 @@ async function cargarResumenProveedores(){
   const miReq = ++reqResumenProv;
   try{
     const [compras, pagos] = await Promise.all([
-      traerTodo("compras_proveedores", "id,fecha,proveedor,n_factura,valor,vencimiento,abono,saldo,estado"),
+      traerTodo("compras_proveedores", "id,fecha,proveedor,n_factura,valor,vencimiento,abono,saldo,estado,observaciones"),
       traerTodo("pagos_proveedores", "id,fecha_pago,proveedor,n_factura,valor_pagado,estado,observaciones"),
     ]);
     if(miReq !== reqResumenProv) return;
@@ -2562,24 +2778,26 @@ function renderResumenProveedores(){
   const comprasOrd = compras.slice().sort((a,b) => String(b.fecha||"").localeCompare(String(a.fecha||"")));
   const tbFac = document.querySelector("#rp-tabla-facturas tbody");
   tbFac.innerHTML = comprasOrd.length === 0
-    ? `<tr><td colspan="8" class="empty-state">No hay facturas con esos filtros.</td></tr>`
+    ? `<tr><td colspan="9" class="empty-state">No hay facturas con esos filtros.</td></tr>`
     : comprasOrd.map(c => `<tr>
         <td>${esc(c.fecha||"—")}</td><td>${esc(c.proveedor)}</td><td>${esc(c.n_factura)}</td><td>${esc(c.vencimiento||"—")}</td>
         <td class="num">${fmtCOP(c.valor)}</td><td class="num">${fmtCOP(c.abono)}</td><td class="num">${fmtCOP(c.saldo)}</td>
-        <td><span class="badge ${num(c.saldo) <= 0 ? "badge-pag" : "badge-pend"}">${num(c.saldo) <= 0 ? "Pagada" : esc(c.estado || "Pendiente")}</span></td></tr>`).join("");
+        <td><span class="badge ${num(c.saldo) <= 0 ? "badge-pag" : "badge-pend"}">${num(c.saldo) <= 0 ? "Pagada" : esc(c.estado || "Pendiente")}</span></td>
+        <td><button type="button" class="btn-submit btn-editar" data-edit-compra="${c.id}">Editar</button></td></tr>`).join("");
   document.querySelector("#rp-tabla-facturas tfoot").innerHTML = comprasOrd.length === 0 ? "" :
-    `<tr><td class="lbl" colspan="4">Total</td><td class="num">${fmtCOP(T.c)}</td><td class="num">${fmtCOP(comprasOrd.reduce((s,c)=>s+num(c.abono),0))}</td><td class="num">${fmtCOP(T.s)}</td><td></td></tr>`;
+    `<tr><td class="lbl" colspan="4">Total</td><td class="num">${fmtCOP(T.c)}</td><td class="num">${fmtCOP(comprasOrd.reduce((s,c)=>s+num(c.abono),0))}</td><td class="num">${fmtCOP(T.s)}</td><td></td><td></td></tr>`;
 
   // Pagos realizados, más recientes primero
   const pagosOrd = pagos.slice().sort((a,b) => String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||"")));
   const tbPag = document.querySelector("#rp-tabla-pagos tbody");
   tbPag.innerHTML = pagosOrd.length === 0
-    ? `<tr><td colspan="6" class="empty-state">No hay pagos con esos filtros.</td></tr>`
+    ? `<tr><td colspan="7" class="empty-state">No hay pagos con esos filtros.</td></tr>`
     : pagosOrd.map(p => `<tr>
         <td>${esc(p.fecha_pago||"—")}</td><td>${esc(p.proveedor)}</td><td>${esc(p.n_factura||"—")}</td>
-        <td class="num">${fmtCOP(p.valor_pagado)}</td><td>${esc(p.estado||"—")}</td><td>${esc(p.observaciones||"—")}</td></tr>`).join("");
+        <td class="num">${fmtCOP(p.valor_pagado)}</td><td>${esc(p.estado||"—")}</td><td>${esc(p.observaciones||"—")}</td>
+        <td><button type="button" class="btn-submit btn-editar" data-edit-pago="${p.id}">Editar</button></td></tr>`).join("");
   document.querySelector("#rp-tabla-pagos tfoot").innerHTML = pagosOrd.length === 0 ? "" :
-    `<tr><td class="lbl" colspan="3">Total pagado</td><td class="num">${fmtCOP(T.p)}</td><td colspan="2"></td></tr>`;
+    `<tr><td class="lbl" colspan="3">Total pagado</td><td class="num">${fmtCOP(T.p)}</td><td colspan="3"></td></tr>`;
 }
 
 document.querySelector("#rp-tabla-prov tbody").addEventListener("click", e => {
