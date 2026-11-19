@@ -694,7 +694,7 @@
           </div>
           <div class="field">
             <label>&nbsp;</label>
-            <label style="font-weight:400; display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" id="c-hist-anulados"> Mostrar anulados</label>
+            <label style="font-weight:400; display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" id="c-hist-anulados"> Solo anulados</label>
           </div>
           <div class="field">
             <label>Mes</label>
@@ -1623,7 +1623,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v35";
+const APP_VERSION = "v36";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3138,7 +3138,7 @@ async function cargarHistorialComprobantes(){
   const mostrarAnulados = document.getElementById("c-hist-anulados").checked;
   const armarFilasComp = cols => traerFilas(() => {
     let q = filtrar(sb.from("comprobantes").select(cols));
-    if(COMP_ANULAR.disponible && !mostrarAnulados) q = q.eq("anulado", false);
+    if(COMP_ANULAR.disponible) q = q.eq("anulado", mostrarAnulados);   // casilla marcada = solo los anulados; sin marcar = solo los vigentes
     return q.order("fecha_pago", { ascending: false }).order("id", { ascending: false });
   }, limiteHist.c);
   const consultaFilas = (async () => {
