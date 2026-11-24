@@ -83,7 +83,7 @@
   .tab.active{ color:#fff; border-bottom-color:var(--orange); }
   .tab:hover:not(.active){ color:#fff; }
 
-  main{ max-width:1180px; margin:0 auto; padding:28px 24px 60px; }
+  main{ max-width:1800px; margin:0 auto; padding:28px 20px 60px; }
   .view{ display:none; }
   .view.active{ display:block; }
 
@@ -510,8 +510,8 @@
         </div>
         <div class="table-wrap">
           <table id="v-recientes">
-            <thead><tr><th>Fecha</th><th>F. despacho</th><th>N° Fact.</th><th>Recibo caja</th><th>Recibo cont.</th><th>Cliente</th><th>Comercial</th><th class="num">Valor</th><th>Estado</th><th class="num">Días</th><th></th></tr></thead>
-            <tbody><tr><td colspan="11" class="empty-state">Cargando historial...</td></tr></tbody>
+            <thead><tr><th>Fecha</th><th>F. despacho</th><th>N° Fact.</th><th>Recibo caja</th><th>Recibo cont.</th><th>Cliente</th><th>Comercial</th><th class="num">Valor</th><th>Estado</th><th>F. pago</th><th>Medio de pago</th><th class="num">Días</th><th></th></tr></thead>
+            <tbody><tr><td colspan="13" class="empty-state">Cargando historial...</td></tr></tbody>
           </table>
         </div>
         <div class="actions-row" style="margin-top:10px;">
@@ -1623,7 +1623,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v37";
+const APP_VERSION = "v38";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2537,7 +2537,7 @@ async function cargarRecibosCaja(){
 async function cargarHistorialVentas(){
   const miReq = ++reqHistVentas;
   const tbody = document.querySelector("#v-recientes tbody");
-  tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Buscando...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="13" class="empty-state">Buscando...</td></tr>`;
 
   const cliente = document.getElementById("v-hist-cliente").value.trim();
   const comercial = document.getElementById("v-hist-comercial").value;
@@ -2588,7 +2588,7 @@ async function cargarHistorialVentas(){
   if(miReq !== reqHistVentas) return; // llegó una búsqueda más nueva, esta ya no vale
 
   if(error){
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Error al buscar: ${error.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty-state">Error al buscar: ${error.message}</td></tr>`;
     pintarTotales("v-hist", null, 0);
     return;
   }
@@ -2598,11 +2598,13 @@ async function cargarHistorialVentas(){
   document.getElementById("v-hist-mas").style.display = hayMasV ? "" : "none";
   document.getElementById("v-hist-todo").style.display = hayMasV ? "" : "none";
   if(historialVentasCache.length === 0){
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">No hay ventas con esos filtros.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty-state">No hay ventas con esos filtros.</td></tr>`;
     return;
   }
   const btnFila = "padding:5px 12px; font-size:11px;";
   const fechaLocalV = f => (f ? new Date(f).toLocaleDateString("es-CO") : "");
+  const pagosVentas = await cargarPagosDeVentas(historialVentasCache).catch(() => ({}));
+  if(miReq !== reqHistVentas) return;
   tbody.innerHTML = historialVentasCache.map(p => {
     const anul = /^anulad/i.test(p.estado || "");
     const tach = t => anul ? `<s>${t}</s>` : t;
@@ -2617,10 +2619,43 @@ async function cargarHistorialVentas(){
     <td>${tach(p.fecha_factura)}</td><td>${p.fecha_despacho||"—"}</td><td>${tach(escapar(p.n_factura))}${p.es_plasticos ? `<br><span class="badge badge-plastico">Plásticos</span>` : ""}${nota}</td><td>${RECIBOS_CAJA[p.n_factura]||"—"}</td><td>${p.recibo_contabilidad||"—"}</td><td>${tach(escapar(p.cliente))}</td>
     <td>${p.comercial||"—"}</td><td class="num">${tach(fmtCOP(p.valor_factura))}</td>
     <td><span class="badge ${p.estado==='Pagado'?'badge-pag':'badge-pend'}">${anul ? "Anulada" : p.estado}</span></td>
+    ${celdasPagoVenta(p, anul, pagosVentas)}
     <td class="num">${anul ? "—" : diasVentaHtml(p)}</td>
     <td>${acciones}</td>
   </tr>`;
   }).join("");
+}
+
+/* Último pago y medio de cada factura del historial: la contadora edita las facturas para poner su recibo de contabilidad
+   y necesita ver si ya se pagó, cuándo y por dónde (Bancolombia, Nequi, efectivo...). Solo lectura de `comprobantes`. */
+async function cargarPagosDeVentas(filas){
+  const mapa = {};
+  const facturas = [...new Set((filas || []).filter(p => (parseFloat(p.abonado) || 0) > 0).map(p => p.n_factura).filter(Boolean))];
+  for(let i = 0; i < facturas.length; i += 80){
+    const lote = facturas.slice(i, i + 80);
+    const armar = conAnulado => traerFilas(() => {
+      let q = sb.from("comprobantes").select("n_factura_ref,fecha_pago,banco").in("n_factura_ref", lote).gt("valor_pagado", 0);
+      if(conAnulado) q = q.eq("anulado", false);
+      return q.order("fecha_pago", { ascending: false }).order("id", { ascending: false });
+    }, 3000);
+    let r = await armar(COMP_ANULAR.disponible);
+    if(r.error && COMP_ANULAR.disponible) r = await armar(false);   // la base aún no tiene el parche v31 (columna anulado)
+    if(r.error) continue;
+    r.data.forEach(c => {
+      const m = mapa[c.n_factura_ref] || (mapa[c.n_factura_ref] = { fecha: c.fecha_pago, medios: [], pagos: 0 });   // el primero es el más reciente
+      m.pagos++;
+      const medio = etiquetaBanco(c.banco);
+      if(!m.medios.includes(medio)) m.medios.push(medio);
+    });
+  }
+  return mapa;
+}
+function celdasPagoVenta(p, anul, mapa){
+  const m = !anul ? mapa[p.n_factura] : null;
+  if(!m) return `<td>—</td><td>—</td>`;
+  const parcial = p.estado !== "Pagado" ? `<br><span class="hint">abono parcial</span>` : "";
+  const varios = m.pagos > 1 ? `<br><span class="hint">${m.pagos} pagos</span>` : "";
+  return `<td>${escapar(m.fecha)}${varios}${parcial}</td><td>${escapar(m.medios.join(", "))}</td>`;
 }
 
 /* Anular y restaurar ventas (parche v26). Anular no borra: queda quién, cuándo y por qué; solo se puede si la venta no tiene pagos.
