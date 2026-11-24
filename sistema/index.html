@@ -460,6 +460,10 @@
             <input type="text" id="v-hist-cliente" placeholder="Buscar por nombre de cliente...">
           </div>
           <div class="field">
+            <label>N° de factura</label>
+            <input type="text" id="v-hist-numero" placeholder="Ej: 17078 o FVE-7574" style="min-width:170px;">
+          </div>
+          <div class="field">
             <label>Comercial</label>
             <select id="v-hist-comercial" data-asesores>
               <option value="">Todos</option>
@@ -1623,7 +1627,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v38";
+const APP_VERSION = "v39";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2540,6 +2544,7 @@ async function cargarHistorialVentas(){
   tbody.innerHTML = `<tr><td colspan="13" class="empty-state">Buscando...</td></tr>`;
 
   const cliente = document.getElementById("v-hist-cliente").value.trim();
+  const numeroFactura = document.getElementById("v-hist-numero").value.trim();
   const comercial = document.getElementById("v-hist-comercial").value;
   const tipoDoc = document.getElementById("v-hist-tipo").value;
   const plasticos = document.getElementById("v-hist-pl").value;
@@ -2551,6 +2556,7 @@ async function cargarHistorialVentas(){
   // Las anuladas se ocultan salvo que se pida verlas, y NUNCA suman en los totales
   const filtrar = (q, paraTotal) => {
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
+    if(numeroFactura) q = q.ilike("n_factura", `%${numeroFactura.replace(/[%,()*]/g, "")}%`);
     if(comercial) q = q.eq("comercial", comercial);
     if(tipoDoc) q = q.eq("tipo_documento", tipoDoc);
     if(plasticos && VENTAS_PLASTICOS.disponible) q = q.eq("es_plasticos", plasticos === "si");
@@ -2704,6 +2710,7 @@ document.getElementById("v-hist-comercial").addEventListener("change", () => { l
 document.getElementById("v-hist-mas").addEventListener("click", () => { limiteHist.v += LIMITE_INICIAL; cargarHistorialVentas(); });
 document.getElementById("v-hist-todo").addEventListener("click", () => { limiteHist.v = 100000; cargarHistorialVentas(); });
 document.getElementById("v-hist-cliente").addEventListener("keydown", e => { if(e.key==="Enter") cargarHistorialVentas(); });
+document.getElementById("v-hist-numero").addEventListener("keydown", e => { if(e.key==="Enter"){ limiteHist.v = LIMITE_INICIAL; cargarHistorialVentas(); } });
 
 /* ---------- Efectivo: quién entrega ---------- */
 const cBanco = document.getElementById("c-banco");
