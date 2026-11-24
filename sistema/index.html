@@ -679,6 +679,10 @@
             <input type="text" id="c-hist-cliente" placeholder="Buscar por nombre de cliente...">
           </div>
           <div class="field">
+            <label>N° de factura</label>
+            <input type="text" id="c-hist-numero" placeholder="Ej: 17078 o FVE-7574" style="min-width:170px;">
+          </div>
+          <div class="field">
             <label>Comercial</label>
             <select id="c-hist-asesor" data-asesores>
               <option value="">Todos</option>
@@ -1627,7 +1631,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v39";
+const APP_VERSION = "v40";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3165,8 +3169,17 @@ async function cargarHistorialComprobantes(){
   const desde = document.getElementById("c-hist-desde").value;
   const hasta = document.getElementById("c-hist-hasta").value;
 
+  // Pago múltiple: si el número buscado está en un pago de varias facturas, se traen TODAS las filas de ese pago
+  const numeroFactura = document.getElementById("c-hist-numero").value.trim().replace(/[%,()*]/g, "");
+  let gruposNumero = [];
+  if(numeroFactura){
+    const { data: gr } = await sb.from("comprobantes").select("grupo_id").ilike("n_factura_ref", `%${numeroFactura}%`).not("grupo_id", "is", null).limit(300);
+    gruposNumero = [...new Set((gr || []).map(x => x.grupo_id))];
+  }
+
   const filtrar = q => {
     if(cliente) q = q.ilike("cliente", `%${cliente}%`);
+    if(numeroFactura) q = gruposNumero.length ? q.or(`n_factura_ref.ilike.*${numeroFactura}*,grupo_id.in.(${gruposNumero.join(",")})`) : q.ilike("n_factura_ref", `%${numeroFactura}%`);
     if(asesorFiltro) q = q.eq("asesor", asesorFiltro);
     if(vbFiltro) q = q.eq("verificado_banco", vbFiltro === "si");
     if(plFiltro) q = q.eq("pago_plasticos", plFiltro === "si");
@@ -3392,6 +3405,7 @@ document.getElementById("c-hist-asesor").addEventListener("change", () => { limi
 document.getElementById("c-hist-mas").addEventListener("click", () => { limiteHist.c += LIMITE_INICIAL; cargarHistorialComprobantes(); });
 document.getElementById("c-hist-todo").addEventListener("click", () => { limiteHist.c = 100000; cargarHistorialComprobantes(); });
 document.getElementById("c-hist-cliente").addEventListener("keydown", e => { if(e.key==="Enter") cargarHistorialComprobantes(); });
+document.getElementById("c-hist-numero").addEventListener("keydown", e => { if(e.key==="Enter"){ limiteHist.c = LIMITE_INICIAL; cargarHistorialComprobantes(); } });
 
 /* ============================================================
    CARTERA
