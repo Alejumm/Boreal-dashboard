@@ -790,6 +790,18 @@
             <label>Mora mínima (días)</label>
             <input type="number" id="cart-mora-min" value="0">
           </div>
+          <div class="field">
+            <label>Mes de la factura</label>
+            <select id="cart-mes"><option value="">Todos</option></select>
+          </div>
+          <div class="field">
+            <label>Facturas desde</label>
+            <input type="date" id="cart-desde">
+          </div>
+          <div class="field">
+            <label>Hasta</label>
+            <input type="date" id="cart-hasta">
+          </div>
           <div class="field grow">
             <label>Buscar cliente / NIT / factura / teléfono</label>
             <input type="text" id="cart-search" placeholder="Escribe para filtrar...">
@@ -1682,7 +1694,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v43";
+const APP_VERSION = "v44";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3519,17 +3531,36 @@ async function cargarCartera(){
     return;
   }
   carteraCache = data || [];
+  llenarMesesCartera();
   renderCartera();
 }
 
+/* Filtro por mes: se arma con los meses de fecha de factura que hay en la cartera (mes calendario de la factura). */
+function llenarMesesCartera(){
+  const sel = document.getElementById("cart-mes");
+  const actual = sel.value;
+  const claves = [...new Set(carteraCache.map(r => String(r.fecha_factura || "").slice(0, 7)).filter(k => /^\d{4}-\d{2}$/.test(k)))].sort().reverse();
+  sel.innerHTML = `<option value="">Todos</option>` + claves.map(k => {
+    const [a, m] = k.split("-");
+    return `<option value="${k}">${MESES_LABEL[parseInt(m, 10) - 1]} ${a}</option>`;
+  }).join("");
+  if(claves.includes(actual)) sel.value = actual;
+}
 function filtrarCartera(){
   const comercial = document.getElementById("cart-comercial").value;
   const moraMin = parseInt(document.getElementById("cart-mora-min").value) || 0;
   const search = document.getElementById("cart-search").value.trim().toLowerCase();
+  const mes = document.getElementById("cart-mes").value;
+  const desde = document.getElementById("cart-desde").value;
+  const hasta = document.getElementById("cart-hasta").value;
 
   return carteraCache.filter(r => {
     if(comercial && r.comercial !== comercial) return false;
     if((r.dias_mora||0) < moraMin) return false;
+    const fechaF = String(r.fecha_factura || "").slice(0, 10);
+    if(mes && fechaF.slice(0, 7) !== mes) return false;
+    if(desde && (!fechaF || fechaF < desde)) return false;
+    if(hasta && (!fechaF || fechaF > hasta)) return false;
     if(search){
       const blob = `${r.cliente||""} ${r.nit||""} ${r.n_factura||""} ${r.telefono||""}`.toLowerCase();
       if(!blob.includes(search)) return false;
@@ -3576,6 +3607,14 @@ function renderCartera(){
 document.getElementById("cart-refresh").addEventListener("click", cargarCartera);
 ["cart-comercial","cart-mora-min"].forEach(id => document.getElementById(id).addEventListener("change", renderCartera));
 document.getElementById("cart-search").addEventListener("input", renderCartera);
+document.getElementById("cart-mes").addEventListener("change", () => {      // elegir un mes limpia el rango de fechas, y al revés
+  if(document.getElementById("cart-mes").value){ document.getElementById("cart-desde").value = ""; document.getElementById("cart-hasta").value = ""; }
+  renderCartera();
+});
+["cart-desde", "cart-hasta"].forEach(id => document.getElementById(id).addEventListener("change", () => {
+  if(document.getElementById(id).value) document.getElementById("cart-mes").value = "";
+  renderCartera();
+}));
 
 /* ---------- Descargar la cartera en Excel (lo que se ve con los filtros actuales) ---------- */
 const CARTERA_EXCEL = {
