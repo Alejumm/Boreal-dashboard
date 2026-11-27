@@ -220,6 +220,7 @@
   .subtab{ background:#fff; border:1.5px solid var(--line); padding:9px 16px; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:.05em; font-size:12px; cursor:pointer; }
   .subtab.active{ background:var(--steel-900); color:#fff; border-color:var(--steel-900); }
   .prov-sec:not(.activa){ display:none; }
+  .cart-sec:not(.activa){ display:none; }
   .modal-fondo{ position:fixed; inset:0; background:rgba(20,25,35,.55); display:none; align-items:center; justify-content:center; z-index:60; padding:16px; }
   .modal-fondo.abierto{ display:flex; }
   .modal-caja{ background:#fff; max-width:600px; width:100%; max-height:90vh; overflow:auto; padding:22px 24px; border-radius:3px; }
@@ -777,7 +778,8 @@
 
     <!-- ---------- CARTERA ---------- -->
     <section class="view" id="view-cartera">
-      <div class="panel">
+      <div class="subnav" id="cart-subnav"><button type="button" class="subtab active" data-sec="pendiente">Pendiente</button><button type="button" class="subtab" data-sec="pagadas">Pagadas</button></div>
+      <div class="panel cart-sec activa" data-sec="pendiente">
         <h2>Cartera pendiente</h2>
         <div class="filters">
           <div class="field">
@@ -845,7 +847,7 @@
         </div>
       </div>
 
-      <div class="panel" id="sf-panel">
+      <div class="panel cart-sec activa" data-sec="pendiente" id="sf-panel">
         <h2>Saldos a favor de clientes</h2>
         <div class="hint" style="margin-bottom:10px;">Cuando un cliente paga de más, el excedente queda aquí y no afecta la factura. Se registra desde el formulario de comprobantes (casilla "Registrar el excedente como saldo a favor") o manualmente, más abajo.</div>
         <div class="totals-strip">
@@ -899,6 +901,66 @@
           </table>
         </div>
       </div>
+      <div class="panel cart-sec" data-sec="pagadas">
+        <h2>Facturas pagadas</h2>
+        <div class="hint" style="margin-bottom:10px;">Facturas con pagos recibidos en el período (abonos parciales incluidos), según la fecha de pago. No incluye pagos sin factura ni saldos a favor.</div>
+        <div class="filters">
+          <div class="field">
+            <label>Ver</label>
+            <select id="pg-vista"><option value="factura">Por factura</option><option value="pago">Por pago</option></select>
+          </div>
+          <div class="field">
+            <label>Mes de pago</label>
+            <select id="pg-mes"><option value="">Todos</option></select>
+          </div>
+          <div class="field">
+            <label>Pagos desde</label>
+            <input type="date" id="pg-desde">
+          </div>
+          <div class="field">
+            <label>Hasta</label>
+            <input type="date" id="pg-hasta">
+          </div>
+          <div class="field">
+            <label>Comercial</label>
+            <select id="pg-comercial" data-asesores>
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Medio de pago</label>
+            <select id="pg-banco"><option value="">Todos</option></select>
+          </div>
+          <div class="field grow">
+            <label>Buscar cliente / NIT / factura</label>
+            <input type="text" id="pg-buscar" placeholder="Escribe para filtrar..." autocomplete="off">
+          </div>
+          <div class="field">
+            <label style="display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0; font-weight:400;"><input type="checkbox" id="pg-sin-recibo"> Sin recibo de contabilidad</label>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="pg-actualizar" style="padding:10px 20px;">Actualizar</button>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn-submit" id="pg-excel" style="padding:10px 20px;background:var(--green);" title="Descarga lo que se ve con los filtros actuales">Descargar Excel</button>
+          </div>
+        </div>
+        <div class="hint" id="pg-msg" style="margin:-4px 0 8px;"></div>
+        <div class="totals-strip">
+          <div class="total-card accent"><div class="label">Total pagado</div><div class="value" id="pg-total">$0</div></div>
+          <div class="total-card"><div class="label" id="pg-n-label">Facturas</div><div class="value" id="pg-n">0</div></div>
+          <div class="total-card"><div class="label">Pagos</div><div class="value" id="pg-pagos">0</div></div>
+        </div>
+        <div class="table-wrap">
+          <table id="pg-tabla">
+            <thead></thead>
+            <tbody><tr><td colspan="11" class="empty-state">Elige un mes o un rango de fechas...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </section>
 
     <!-- ---------- PROVEEDORES Y GASTOS ---------- -->
@@ -1694,7 +1756,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v44";
+const APP_VERSION = "v45";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -3603,6 +3665,207 @@ function renderCartera(){
   document.getElementById("cart-total-facturas").textContent = filtrado.length;
   document.getElementById("cart-mora-prom").textContent = moraProm + " días";
 }
+
+/* ============================================================
+   CARTERA > PAGADAS: facturas con pagos recibidos en un período (por fecha de pago), por factura o por pago, con Excel.
+   Solo lectura de comprobantes y ventas; no cambia datos.
+   ============================================================ */
+let PAGADAS_FILAS = [];      // pagos (comprobantes) del período, ya enriquecidos con la venta
+let pagadasIniciada = false;
+let reqPagadas = 0;
+const PAGADAS_COLS_FACTURA = [
+  ["Factura", "n_factura", "txt", 12], ["Cliente", "cliente", "txt", 38], ["NIT", "nit", "txt", 14], ["Comercial", "comercial", "txt", 12],
+  ["Fecha factura", "fecha_factura", "fecha", 13], ["Valor factura", "valor_factura", "dinero", 15],
+  ["Pagado en el período", "pagado", "dinero", 18], ["Pagos", "pagos", "num", 8], ["Fecha último pago", "ultimo_pago", "fecha", 16],
+  ["Medio de pago", "medios", "txt", 24], ["Recibo de caja", "recibos", "txt", 16], ["Recibo de contabilidad", "recibo_contabilidad", "txt", 20],
+  ["Saldo actual", "saldo", "dinero", 15], ["Estado", "estado_pago", "txt", 14]
+];
+const PAGADAS_COLS_PAGO = [
+  ["Fecha de pago", "fecha_pago", "fecha", 14], ["Factura", "n_factura", "txt", 12], ["Cliente", "cliente", "txt", 38], ["NIT", "nit", "txt", 14],
+  ["Comercial", "comercial", "txt", 12], ["Valor pagado", "valor_pagado", "dinero", 15], ["Medio de pago", "medio", "txt", 20],
+  ["Recibo de caja", "recibo_caja", "txt", 16], ["Recibo de contabilidad", "recibo_contabilidad", "txt", 20],
+  ["Fecha factura", "fecha_factura", "fecha", 13], ["Valor factura", "valor_factura", "dinero", 15], ["Saldo actual", "saldo", "dinero", 15], ["Estado", "estado_pago", "txt", 14]
+];
+function rangoPagadas(){
+  const mes = document.getElementById("pg-mes").value;
+  if(mes){
+    const [a, m] = mes.split("-");
+    return { ini: `${a}-${m}-01`, fin: `${a}-${m}-${String(new Date(+a, +m, 0).getDate()).padStart(2, "0")}` };
+  }
+  return { ini: document.getElementById("pg-desde").value || "", fin: document.getElementById("pg-hasta").value || "" };
+}
+async function iniciarPagadas(){
+  // meses de pago: desde el primer comprobante hasta el mes actual (más reciente primero)
+  const { data } = await sb.from("comprobantes").select("fecha_pago").not("fecha_pago", "is", null).order("fecha_pago", { ascending: true }).limit(1);
+  const hoy = new Date();
+  let a = hoy.getFullYear(), m = hoy.getMonth() + 1;
+  const primero = data && data[0] ? String(data[0].fecha_pago).slice(0, 7) : `${a}-${String(m).padStart(2, "0")}`;
+  const opciones = [];
+  for(let k = 0; k < 120; k++){
+    const clave = `${a}-${String(m).padStart(2, "0")}`;
+    if(clave < primero) break;
+    opciones.push(`<option value="${clave}">${MESES_LABEL[m - 1]} ${a}</option>`);
+    m--; if(m === 0){ m = 12; a--; }
+  }
+  const sel = document.getElementById("pg-mes");
+  sel.innerHTML = `<option value="">Todos</option>` + opciones.join("");
+  if(opciones.length) sel.value = sel.options[1].value;                          // abre en el mes actual
+  pagadasIniciada = true;
+}
+function llenarMediosPagadas(){
+  const sel = document.getElementById("pg-banco"), actual = sel.value;
+  sel.innerHTML = `<option value="">Todos</option>` + Object.values(BANCOS).map(b => `<option value="${escapar(b.nombre)}">${escapar(b.etiqueta || b.nombre)}</option>`).join("");
+  sel.value = actual;
+}
+async function cargarPagadas(){
+  const miReq = ++reqPagadas;
+  const tb = document.querySelector("#pg-tabla tbody"), msg = document.getElementById("pg-msg");
+  if(!pagadasIniciada){ await iniciarPagadas(); llenarMediosPagadas(); }
+  const { ini, fin } = rangoPagadas();
+  if(!ini && !fin && !document.getElementById("pg-mes").value){
+    msg.textContent = "Sin fechas: se muestran todos los pagos de la historia (puede tardar).";
+  } else msg.textContent = "";
+  tb.innerHTML = `<tr><td colspan="11" class="empty-state">Buscando...</td></tr>`;
+  const asesor = document.getElementById("pg-comercial").value, banco = document.getElementById("pg-banco").value;
+  const armar = conAnulado => traerFilas(() => {
+    let q = sb.from("comprobantes").select("id,fecha_pago,n_factura_ref,nit,cliente,asesor,banco,valor_pagado,recibo_caja")
+      .not("n_factura_ref", "is", null).gt("valor_pagado", 0);
+    if(ini) q = q.gte("fecha_pago", ini);
+    if(fin) q = q.lte("fecha_pago", fin);
+    if(asesor) q = q.eq("asesor", asesor);
+    if(banco) q = q.eq("banco", banco);
+    if(conAnulado) q = q.eq("anulado", false);
+    return q.order("fecha_pago", { ascending: false }).order("id", { ascending: false });
+  }, 100000);
+  let r = await armar(COMP_ANULAR.disponible);
+  if(r.error && COMP_ANULAR.disponible) r = await armar(false);                  // la base aún no tiene el parche v31
+  if(miReq !== reqPagadas) return;
+  if(r.error){ tb.innerHTML = `<tr><td colspan="11" class="empty-state">Error al buscar: ${escapar(r.error.message)}</td></tr>`; return; }
+  const pagos = r.data || [];
+  // datos de la venta de cada factura (cliente, comercial, valores, recibo de contabilidad)
+  const facturas = [...new Set(pagos.map(p => p.n_factura_ref))];
+  const ventas = {};
+  for(let i = 0; i < facturas.length; i += 80){
+    const lote = facturas.slice(i, i + 80);
+    const rv = await traerFilas(() => sb.from("ventas").select("n_factura,fecha_factura,cliente,nit,comercial,valor_factura,abonado,estado,recibo_contabilidad").in("n_factura", lote).order("id"), 2000);
+    if(miReq !== reqPagadas) return;
+    (rv.data || []).forEach(v => { ventas[v.n_factura] = v; });
+  }
+  PAGADAS_FILAS = pagos.map(p => {
+    const v = ventas[p.n_factura_ref] || {};
+    const valorF = Number(v.valor_factura) || 0, abonado = Number(v.abonado) || 0, saldo = valorF - abonado;
+    return { fecha_pago: p.fecha_pago, n_factura: p.n_factura_ref, cliente: v.cliente || p.cliente || "", nit: v.nit || p.nit || "",
+      comercial: p.asesor || v.comercial || "", valor_pagado: Number(p.valor_pagado) || 0, medio: etiquetaBanco(p.banco), recibo_caja: p.recibo_caja || "",
+      recibo_contabilidad: v.recibo_contabilidad || "", fecha_factura: v.fecha_factura || "", valor_factura: valorF, saldo,
+      estado_pago: v.n_factura ? (saldo <= 0.5 ? "Pagada" : "Abono parcial") : "—" };
+  });
+  pintarPagadas();
+}
+function filtrarPagadas(){
+  const texto = document.getElementById("pg-buscar").value.trim().toLowerCase();
+  const sinRecibo = document.getElementById("pg-sin-recibo").checked;
+  return PAGADAS_FILAS.filter(f => {
+    if(sinRecibo && f.recibo_contabilidad) return false;
+    if(texto && !`${f.cliente} ${f.nit} ${f.n_factura}`.toLowerCase().includes(texto)) return false;
+    return true;
+  });
+}
+function agruparPagadasPorFactura(filas){
+  const mapa = new Map();
+  filas.forEach(f => {                              // las filas vienen de la más reciente a la más antigua
+    let g = mapa.get(f.n_factura);
+    if(!g){ g = { n_factura: f.n_factura, cliente: f.cliente, nit: f.nit, comercial: f.comercial, fecha_factura: f.fecha_factura, valor_factura: f.valor_factura,
+      pagado: 0, pagos: 0, ultimo_pago: f.fecha_pago, medios: [], recibos: [], recibo_contabilidad: f.recibo_contabilidad, saldo: f.saldo, estado_pago: f.estado_pago };
+      mapa.set(f.n_factura, g); }
+    g.pagado += f.valor_pagado; g.pagos++;
+    if(!g.medios.includes(f.medio)) g.medios.push(f.medio);
+    if(f.recibo_caja && !g.recibos.includes(f.recibo_caja)) g.recibos.push(f.recibo_caja);
+  });
+  return [...mapa.values()].map(g => ({ ...g, medios: g.medios.join(", "), recibos: g.recibos.join(", ") }));
+}
+function pintarPagadas(){
+  const vista = document.getElementById("pg-vista").value;
+  const filtradas = filtrarPagadas();
+  const thead = document.querySelector("#pg-tabla thead"), tb = document.querySelector("#pg-tabla tbody");
+  const celdaEstado = e => `<span class="badge ${e === "Pagada" ? "badge-pag" : "badge-pend"}">${escapar(e)}</span>`;
+  let filas, total = filtradas.reduce((s, f) => s + f.valor_pagado, 0);
+  if(vista === "factura"){
+    filas = agruparPagadasPorFactura(filtradas);
+    thead.innerHTML = `<tr><th>Factura</th><th>Cliente</th><th>Comercial</th><th>F. factura</th><th class="num">Valor factura</th><th class="num">Pagado</th><th>F. último pago</th><th>Medio</th><th>Recibo caja</th><th>Recibo cont.</th><th>Estado</th></tr>`;
+    tb.innerHTML = filas.length ? filas.map(g => `<tr><td>${escapar(g.n_factura)}</td><td>${escapar(g.cliente)}</td><td>${escapar(g.comercial || "—")}</td><td>${escapar(g.fecha_factura || "—")}</td>
+      <td class="num">${fmtCOP(g.valor_factura)}</td><td class="num">${fmtCOP(g.pagado)}${g.pagos > 1 ? `<br><span class="hint">${g.pagos} pagos</span>` : ""}</td>
+      <td>${escapar(g.ultimo_pago)}</td><td>${escapar(g.medios)}</td><td>${escapar(g.recibos || "—")}</td><td>${escapar(g.recibo_contabilidad || "—")}</td><td>${celdaEstado(g.estado_pago)}</td></tr>`).join("")
+      : `<tr><td colspan="11" class="empty-state">No hay pagos con esos filtros.</td></tr>`;
+    document.getElementById("pg-n-label").textContent = "Facturas";
+    document.getElementById("pg-n").textContent = filas.length;
+  } else {
+    filas = filtradas;
+    thead.innerHTML = `<tr><th>F. pago</th><th>Factura</th><th>Cliente</th><th>Comercial</th><th class="num">Valor pagado</th><th>Medio</th><th>Recibo caja</th><th>Recibo cont.</th><th class="num">Valor factura</th><th>Estado</th></tr>`;
+    tb.innerHTML = filas.length ? filas.map(f => `<tr><td>${escapar(f.fecha_pago)}</td><td>${escapar(f.n_factura)}</td><td>${escapar(f.cliente)}</td><td>${escapar(f.comercial || "—")}</td>
+      <td class="num">${fmtCOP(f.valor_pagado)}</td><td>${escapar(f.medio)}</td><td>${escapar(f.recibo_caja || "—")}</td><td>${escapar(f.recibo_contabilidad || "—")}</td>
+      <td class="num">${fmtCOP(f.valor_factura)}</td><td>${celdaEstado(f.estado_pago)}</td></tr>`).join("")
+      : `<tr><td colspan="10" class="empty-state">No hay pagos con esos filtros.</td></tr>`;
+    document.getElementById("pg-n-label").textContent = "Pagos (filas)";
+    document.getElementById("pg-n").textContent = filas.length;
+  }
+  document.getElementById("pg-total").textContent = fmtCOP(total);
+  document.getElementById("pg-pagos").textContent = filtradas.length;
+}
+function hojaDesdeColumnas(XLSX, cols, filas){
+  const ws = XLSX.utils.aoa_to_sheet([cols.map(c => c[0])]);
+  filas.forEach((r, i) => cols.forEach(([, campo, tipo], j) => {
+    const v = r[campo], ref = XLSX.utils.encode_cell({ r: i + 1, c: j });
+    if(v === null || v === undefined || v === "") return;
+    if(tipo === "fecha"){ const f = fechaExcel(String(v)); ws[ref] = f === null ? { t: "s", v: String(v) } : { t: "n", v: f, z: "dd/mm/yyyy" }; }
+    else if(tipo === "dinero" || tipo === "num"){ const n = Number(v); ws[ref] = isNaN(n) ? { t: "s", v: String(v) } : { t: "n", v: n, z: tipo === "dinero" ? "#,##0" : "0" }; }
+    else ws[ref] = { t: "s", v: String(v) };
+  }));
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: cols.length - 1 } });
+  ws["!autofilter"] = { ref: ws["!ref"] };
+  ws["!cols"] = cols.map(c => ({ wch: c[3] }));
+  return ws;
+}
+async function descargarPagadasExcel(){
+  const msg = document.getElementById("pg-msg"), btn = document.getElementById("pg-excel");
+  const vista = document.getElementById("pg-vista").value;
+  const filtradas = filtrarPagadas();
+  const filas = vista === "factura" ? agruparPagadasPorFactura(filtradas) : filtradas;
+  if(!filas.length){ msg.textContent = "No hay pagos para descargar con esos filtros."; return; }
+  btn.disabled = true; msg.textContent = "Preparando el archivo...";
+  try{
+    const XLSX = await cargarLibreriaExcel();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, hojaDesdeColumnas(XLSX, vista === "factura" ? PAGADAS_COLS_FACTURA : PAGADAS_COLS_PAGO, filas), vista === "factura" ? "Facturas pagadas" : "Pagos");
+    const hoy = new Date(), dd = n => String(n).padStart(2, "0");
+    const fecha = `${hoy.getFullYear()}-${dd(hoy.getMonth() + 1)}-${dd(hoy.getDate())}`;
+    const { ini, fin } = rangoPagadas();
+    const periodo = document.getElementById("pg-mes").value || ((ini || fin) ? `${ini || "inicio"}_a_${fin || "hoy"}` : "historia");
+    const nombre = `Pagadas_Boreal_${vista === "factura" ? "por_factura" : "por_pago"}_${periodo}_${fecha}.xlsx`;
+    XLSX.writeFile(wb, nombre);
+    msg.textContent = `Se descargó ${nombre}: ${filas.length} filas, pagado ${fmtCOP(filtradas.reduce((s, f) => s + f.valor_pagado, 0))}.`;
+  } catch(e){
+    msg.textContent = "No se pudo generar el Excel: " + e.message;
+  } finally { btn.disabled = false; }
+}
+function mostrarSeccionCartera(sec){
+  document.querySelectorAll("#cart-subnav .subtab").forEach(b => b.classList.toggle("active", b.dataset.sec === sec));
+  document.querySelectorAll("#view-cartera .cart-sec").forEach(p => p.classList.toggle("activa", p.dataset.sec === sec));
+  if(sec === "pagadas"){ llenarMediosPagadas(); cargarPagadas(); }
+}
+document.querySelectorAll("#cart-subnav .subtab").forEach(b => b.addEventListener("click", () => mostrarSeccionCartera(b.dataset.sec)));
+document.getElementById("pg-actualizar").addEventListener("click", cargarPagadas);
+document.getElementById("pg-excel").addEventListener("click", descargarPagadasExcel);
+document.getElementById("pg-mes").addEventListener("change", () => {            // elegir un mes limpia el rango de fechas, y al revés
+  if(document.getElementById("pg-mes").value){ document.getElementById("pg-desde").value = ""; document.getElementById("pg-hasta").value = ""; }
+  cargarPagadas();
+});
+["pg-desde", "pg-hasta"].forEach(id => document.getElementById(id).addEventListener("change", () => {
+  if(document.getElementById(id).value) document.getElementById("pg-mes").value = "";
+  cargarPagadas();
+}));
+["pg-comercial", "pg-banco"].forEach(id => document.getElementById(id).addEventListener("change", cargarPagadas));
+["pg-vista", "pg-sin-recibo"].forEach(id => document.getElementById(id).addEventListener("change", pintarPagadas));
+document.getElementById("pg-buscar").addEventListener("input", pintarPagadas);
 
 document.getElementById("cart-refresh").addEventListener("click", cargarCartera);
 ["cart-comercial","cart-mora-min"].forEach(id => document.getElementById(id).addEventListener("change", renderCartera));
