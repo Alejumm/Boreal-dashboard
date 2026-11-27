@@ -284,6 +284,18 @@
   .modal-caja{ border-radius:var(--radius); box-shadow:0 20px 50px rgba(0,0,0,.3); }
   .multi-row{ border-radius:var(--radius-s); }
   .aviso-sistema{ font-size:13px; }
+  /* formularios más compactos: 4 campos por fila en pantalla ancha */
+  .grid{ grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px 14px; }
+  .grid .field{ margin-bottom:0; }
+  .grid input,.grid select{ padding:8px 10px; }
+  .grid .hint{ margin-top:3px; }
+  @media (max-width:1150px){ .grid{ grid-template-columns:repeat(3, minmax(0,1fr)); } }
+  @media (max-width:820px){ .grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:700px){ .grid{ grid-template-columns:1fr; } }
+  .cierres-par{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:32px; }
+  .cierres-col{ min-width:0; }
+  .cierres-col .filters .field{ min-width:140px; }
+  @media (max-width:1100px){ .cierres-par{ grid-template-columns:1fr; } }
   /* celular */
   @media (max-width:700px){
     header.topbar{ padding:0 14px; }
@@ -1685,6 +1697,8 @@
       </div>
 
       <div class="panel" id="cierres-panel">
+        <div class="cierres-par">
+        <div class="cierres-col">
         <h3 class="dash-sub-h">Cierres de mes</h3>
         <div class="hint" style="margin-bottom:10px;">Cada mes va desde el día siguiente al cierre del mes anterior hasta su fecha de cierre (inclusive). Las tarjetas del Dashboard, la tabla por comercial y el Panel de gerencia usan estas fechas. Un mes sin cierre registrado se cuenta como mes calendario.</div>
         <div class="table-wrap">
@@ -1700,8 +1714,9 @@
           <div class="field grow"><div class="hint" id="cierre-hint" style="margin-top:26px;"></div></div>
         </div>
         <div class="msg" id="cierre-msg"></div>
+        </div>
 
-        <div id="cortes-bloque" style="margin-top:22px; padding-top:14px; border-top:1px solid var(--line);">
+        <div id="cortes-bloque" class="cierres-col">
           <h3 class="dash-sub-h">Corte de comisiones y recaudo</h3>
           <div class="hint" style="margin-bottom:10px;">La gerente paga comisiones el 30 o el 31 de cada mes y lo decide ella. Ese día <strong>cuenta</strong> para la comisión de ese mes; los pagos posteriores van al mes siguiente. El recaudo del Dashboard y la comisión del Panel de gerencia y de los reportes usan este corte (no el cierre de ventas). Regístralo el día que se pagan las comisiones.</div>
           <div class="table-wrap">
@@ -1717,6 +1732,7 @@
             <div class="field grow"><div class="hint" id="corte-hint" style="margin-top:26px;"></div></div>
           </div>
           <div class="msg" id="corte-msg"></div>
+        </div>
         </div>
       </div>
 
@@ -1830,7 +1846,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v46";
+const APP_VERSION = "v48";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
