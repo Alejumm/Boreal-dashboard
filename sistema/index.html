@@ -254,6 +254,27 @@
     </form>
   </div>
 </div>
+<div class="modal-fondo" id="modal-prov-editar">
+  <div class="modal-caja">
+    <h2>Editar proveedor</h2>
+    <form id="form-prov-editar">
+      <div class="grid">
+        <div class="field full"><label>Nombre / razón social *</label><input type="text" id="pe-nombre" required autocomplete="off"></div>
+        <div class="field"><label>NIT</label><input type="text" id="pe-nit" autocomplete="off"></div>
+        <div class="field"><label>Teléfono</label><input type="text" id="pe-telefono" inputmode="tel" autocomplete="off"></div>
+        <div class="field"><label>Correo</label><input type="email" id="pe-correo" autocomplete="off"></div>
+        <div class="field"><label>Ciudad</label><input type="text" id="pe-ciudad" autocomplete="off"></div>
+        <div class="field full"><label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-weight:400;"><input type="checkbox" id="pe-activo"> Proveedor activo</label></div>
+      </div>
+      <div class="hint" id="pe-hint-nombre">Si cambias el nombre, se cambia también en todas sus facturas y pagos (anulados incluidos). La ciudad decide si se propone el ICA (Bogotá).</div>
+      <div class="msg" id="pe-msg"></div>
+      <div style="display:flex; gap:10px; margin-top:12px;">
+        <button type="submit" class="btn-submit" id="pe-submit">Guardar cambios</button>
+        <button type="button" class="btn-submit" id="pe-cancelar" style="background:var(--steel-800);">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
 <div class="modal-fondo" id="modal-factura-prov">
   <div class="modal-caja">
     <h2>Editar factura de proveedor</h2>
@@ -331,6 +352,7 @@
       <div class="panel">
         <h2>Nueva venta</h2>
         <form id="form-venta">
+          <div id="v-pagos-resumen" style="display:none; margin:0 0 16px; padding:12px 14px; border:1px solid var(--line); border-left:4px solid var(--orange); background:#FBFBFD; border-radius:3px;"></div>
           <div class="grid">
             <div class="field">
               <label>Fecha factura *</label>
@@ -339,6 +361,14 @@
             <div class="field">
               <label>Fecha despacho</label>
               <input type="date" id="v-fecha_despacho">
+            </div>
+            <div class="field" id="v-fp-wrap" style="display:none;">
+              <label>Fecha de pago (último)</label>
+              <input type="text" id="v-fecha_pago_info" readonly tabindex="-1" style="background:#F4F5F8;">
+            </div>
+            <div class="field" id="v-mp-wrap" style="display:none;">
+              <label>Medio de pago</label>
+              <input type="text" id="v-medio_pago_info" readonly tabindex="-1" style="background:#F4F5F8;">
             </div>
             <div class="field">
               <label>Tipo de documento *</label>
@@ -866,6 +896,7 @@
         <button type="button" class="subtab" data-sec="cartera">Resumen y cartera</button>
         <button type="button" class="subtab" data-sec="facturas">Facturas de proveedores</button>
         <button type="button" class="subtab" data-sec="pagos">Pagos a proveedores</button>
+        <button type="button" class="subtab" data-sec="lista">Proveedores</button>
         <button type="button" class="btn-submit" id="prov-nuevo-btn" style="margin-left:auto; padding:8px 16px;">+ Nuevo proveedor</button>
       </div>
 
@@ -1054,6 +1085,26 @@
           <table id="fp-tabla">
             <thead><tr><th>Fecha</th><th>Proveedor</th><th>N° factura</th><th class="num">Valor</th><th class="num">Abonado</th><th class="num">Saldo</th><th>Vence</th><th>Estado</th><th></th></tr></thead>
             <tbody><tr><td colspan="9" class="empty-state">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel prov-sec" data-sec="lista">
+        <h2>Proveedores</h2>
+        <div class="filters">
+          <div class="field grow">
+            <label>Buscar</label>
+            <input type="text" id="pl-buscar" placeholder="Nombre, NIT, ciudad o correo..." autocomplete="off">
+          </div>
+          <div class="field">
+            <label style="display:flex; gap:6px; align-items:center; padding:10px 0; text-transform:none; letter-spacing:0; font-weight:400;"><input type="checkbox" id="pl-inactivos"> Mostrar inactivos</label>
+          </div>
+        </div>
+        <div class="hint" id="pl-count"></div>
+        <div class="table-wrap">
+          <table id="pl-tabla">
+            <thead><tr><th>Nombre</th><th>NIT</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th><th>Estado</th><th></th></tr></thead>
+            <tbody><tr><td colspan="7" class="empty-state">Cargando proveedores...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1631,7 +1682,7 @@
    ============================================================ */
 /* Versión de este archivo (se muestra arriba y se compara con version.json del sitio) y versión mínima de la base que necesita.
    Al cambiar el HTML: subir APP_VERSION; si trae un parche SQL nuevo: subir también ESQUEMA_REQUERIDO. */
-const APP_VERSION = "v40";
+const APP_VERSION = "v43";
 const ESQUEMA_REQUERIDO = 17;
 
 const EMPRESA = {
@@ -2486,6 +2537,8 @@ function salirModoEdicionVenta(){
   vNFactura.disabled = false;
   document.getElementById("v-abonado").disabled = false;
   document.getElementById("v-tipo-hint").textContent = "";
+  const cajaPagos = document.getElementById("v-pagos-resumen"); if(cajaPagos){ cajaPagos.style.display = "none"; cajaPagos.innerHTML = ""; }
+  ponerInfoPagoVenta("", "");
   limpiarFormularioVenta();
 }
 document.getElementById("v-cancelar-edicion").addEventListener("click", salirModoEdicionVenta);
@@ -2526,7 +2579,52 @@ function editarVenta(id){
   const detallesVenta = document.querySelector("#form-venta details.advanced");
   if(detallesVenta && (fila.nota_credito || fila.descuento || fila.retencion)) detallesVenta.open = true;
 
+  pintarResumenPagosVenta(fila);
   document.getElementById("form-venta").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+/* Al editar una venta que ya tiene comprobantes: se muestra cuánto se ha pagado, cuándo y por dónde.
+   Solo lectura; el abonado sigue controlándose desde el historial de comprobantes. */
+function ponerInfoPagoVenta(fecha, medio){
+  const mostrar = !!fecha;
+  document.getElementById("v-fp-wrap").style.display = mostrar ? "" : "none";
+  document.getElementById("v-mp-wrap").style.display = mostrar ? "" : "none";
+  document.getElementById("v-fecha_pago_info").value = fecha || "";
+  document.getElementById("v-medio_pago_info").value = medio || "";
+}
+async function pintarResumenPagosVenta(fila){
+  const caja = document.getElementById("v-pagos-resumen");
+  if(!caja) return;
+  caja.style.display = "none"; caja.innerHTML = "";
+  ponerInfoPagoVenta("", "");
+  if(!fila || !fila.n_factura) return;
+  const idVenta = fila.id;
+  const armar = conAnulado => traerFilas(() => {
+    let q = sb.from("comprobantes").select("fecha_pago,banco,valor_pagado,descuento,retencion,recibo_caja").eq("n_factura_ref", fila.n_factura).order("fecha_pago", { ascending: false }).order("id", { ascending: false });
+    if(conAnulado) q = q.eq("anulado", false);
+    return q;
+  }, 500);
+  let r = await armar(COMP_ANULAR.disponible);
+  if(r.error && COMP_ANULAR.disponible) r = await armar(false);          // la base aún no tiene el parche v31
+  if(editandoVentaId !== idVenta) return;                                // ya cambió de venta o salió de la edición
+  const pagos = (r.data || []).filter(p => (parseFloat(p.valor_pagado) || 0) > 0);
+  const abonado = parseFloat(fila.abonado) || 0;
+  if(pagos.length === 0 && abonado <= 0) return;                         // sin pagos: no hay nada que mostrar
+  const pagado = pagos.reduce((s, p) => s + (parseFloat(p.valor_pagado) || 0), 0);
+  const medios = [...new Set(pagos.map(p => etiquetaBanco(p.banco)))].join(", ") || "—";
+  const recibos = [...new Set(pagos.map(p => p.recibo_caja).filter(Boolean))].join(", ");
+  const saldo = (parseFloat(fila.valor_factura) || 0) - abonado;
+  const otros = abonado - pagado;                                        // descuento, retención, nota crédito y ajustes que también bajan el saldo
+  caja.innerHTML = `<div style="font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); margin-bottom:6px;">Pagos de esta venta</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px 28px; font-size:14px;">
+      <span><b>Valor pagado:</b> ${fmtCOP(pagado)}</span>
+      <span><b>Último pago:</b> ${escapar(pagos[0] ? pagos[0].fecha_pago : "—")}${pagos.length > 1 ? ` (${pagos.length} pagos)` : ""}</span>
+      <span><b>Medio:</b> ${escapar(medios)}</span>
+      ${recibos ? `<span><b>Recibo de caja:</b> ${escapar(recibos)}</span>` : ""}
+      <span><b>Saldo:</b> ${fmtCOP(saldo)}</span>
+    </div>
+    ${Math.abs(otros) > 0.5 ? `<div class="hint">Además del valor pagado, ${fmtCOP(otros)} bajaron el saldo (descuento, retención, nota crédito o ajuste).</div>` : ""}`;
+  caja.style.display = "";
+  ponerInfoPagoVenta(pagos[0] ? pagos[0].fecha_pago + (pagos.length > 1 ? ` (${pagos.length} pagos)` : "") : "", medios);
 }
 function quitarPrefijoFactura(n){
   if(!n) return "";
@@ -5196,6 +5294,7 @@ function mostrarSeccionProv(sec){
   document.querySelectorAll("#view-proveedores .prov-sec").forEach(p => p.classList.toggle("activa", p.dataset.sec === sec));
   if(sec === "facturas") cargarFacturasProv();
   if(sec === "pagos") cargarPagosProv();
+  if(sec === "lista") cargarTablaProveedores();
   if(sec === "cartera") cargarCarteraProveedores();
 }
 document.querySelectorAll("#prov-subnav .subtab").forEach(b => b.addEventListener("click", () => mostrarSeccionProv(b.dataset.sec)));
@@ -5237,6 +5336,85 @@ document.getElementById("form-prov-nuevo").addEventListener("submit", async e =>
   mostrarSeccionProv("registrar");
   const m2 = document.getElementById("cp-msg"); m2.textContent = `Proveedor creado: ${nombre}. Ya puedes registrarle compras y pagos.`; m2.className = "msg ok";
 });
+
+/* --- Listado y edición de proveedores (SQL v32: editar_proveedor) --- */
+let PROVEEDORES_LISTA = [];
+let provEditando = null;
+async function cargarTablaProveedores(){
+  const tb = document.querySelector("#pl-tabla tbody");
+  const { data, error } = await sb.from("proveedores").select("id,nombre,nit,telefono,correo,ciudad,activo").order("nombre");
+  if(error){ tb.innerHTML = `<tr><td colspan="7" class="empty-state">Error al cargar: ${escapar(error.message)}</td></tr>`; return; }
+  PROVEEDORES_LISTA = data || [];
+  pintarTablaProveedores();
+}
+function pintarTablaProveedores(){
+  const tb = document.querySelector("#pl-tabla tbody");
+  const texto = (document.getElementById("pl-buscar").value || "").trim().toLowerCase();
+  const conInactivos = document.getElementById("pl-inactivos").checked;
+  const filas = PROVEEDORES_LISTA.filter(p => (conInactivos || p.activo !== false)
+    && (!texto || [p.nombre, p.nit, p.ciudad, p.correo].some(v => String(v || "").toLowerCase().includes(texto))));
+  document.getElementById("pl-count").textContent = `${filas.length} de ${PROVEEDORES_LISTA.length} proveedores`;
+  if(!filas.length){ tb.innerHTML = `<tr><td colspan="7" class="empty-state">No hay proveedores con esa búsqueda.</td></tr>`; return; }
+  tb.innerHTML = filas.map(p => `<tr${p.activo === false ? ' class="gasto-anulado"' : ""}>
+    <td>${escapar(p.nombre)}</td><td>${escapar(p.nit || "—")}</td><td>${escapar(p.telefono || "—")}</td><td>${escapar(p.correo || "—")}</td><td>${escapar(p.ciudad || "—")}</td>
+    <td><span class="badge ${p.activo === false ? "badge-pend" : "badge-pag"}">${p.activo === false ? "Inactivo" : "Activo"}</span></td>
+    <td><button type="button" class="btn-submit" style="padding:5px 12px; font-size:11px; background:var(--steel-800);" onclick="editarProveedor(${p.id})">Editar</button></td>
+  </tr>`).join("");
+}
+function editarProveedor(id){
+  const p = PROVEEDORES_LISTA.find(x => x.id === id);
+  if(!p) return;
+  provEditando = p;
+  document.getElementById("pe-nombre").value = p.nombre || "";
+  document.getElementById("pe-nit").value = p.nit || "";
+  document.getElementById("pe-telefono").value = p.telefono || "";
+  document.getElementById("pe-correo").value = p.correo || "";
+  document.getElementById("pe-ciudad").value = p.ciudad || "";
+  document.getElementById("pe-activo").checked = p.activo !== false;
+  const m = document.getElementById("pe-msg"); m.textContent = ""; m.className = "msg";
+  abrirModal("modal-prov-editar");
+  document.getElementById("pe-nombre").focus();
+}
+document.getElementById("pe-cancelar").addEventListener("click", () => cerrarModal("modal-prov-editar"));
+document.getElementById("form-prov-editar").addEventListener("submit", async e => {
+  e.preventDefault();
+  if(!provEditando) return;
+  const msg = document.getElementById("pe-msg"), btn = document.getElementById("pe-submit");
+  msg.textContent = ""; msg.className = "msg";
+  const nombre = colapsar(document.getElementById("pe-nombre").value);
+  if(!nombre){ msg.textContent = "Escribe el nombre del proveedor."; msg.classList.add("err"); return; }
+  const correo = colapsar(document.getElementById("pe-correo").value).toLowerCase();
+  if(correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)){ msg.textContent = "El correo no parece válido."; msg.classList.add("err"); return; }
+  const viejo = provEditando.nombre;
+  if(nombre !== viejo && !confirm(`¿Cambiar el nombre de "${viejo}" a "${nombre}"?\n\nSe cambia también en todas sus facturas y pagos. Queda registrado quién lo cambió.`)) return;
+  btn.disabled = true; btn.textContent = "Guardando...";
+  const { data, error } = await sb.rpc("editar_proveedor", {
+    p_id: provEditando.id, p_nombre: nombre, p_nit: nullSiVacio(document.getElementById("pe-nit").value),
+    p_telefono: limpiarTel(document.getElementById("pe-telefono").value) || null, p_correo: correo || null,
+    p_ciudad: nullSiVacio(document.getElementById("pe-ciudad").value), p_activo: document.getElementById("pe-activo").checked });
+  btn.disabled = false; btn.textContent = "Guardar cambios";
+  if(error){
+    msg.textContent = /function .*editar_proveedor|schema cache/i.test(error.message || "")
+      ? "Falta el parche v32 en la base de datos: avisa a quien administra el sistema."
+      : error.code === "23505" ? "Ya existe un proveedor con ese nombre o NIT." : "No se pudo guardar: " + error.message;
+    msg.classList.add("err"); return;
+  }
+  cerrarModal("modal-prov-editar");
+  // el nombre pudo cambiar: se refrescan las listas que lo usan (autocompletado, ciudad para el ICA y formularios abiertos)
+  Object.keys(PROV_CIUDAD).forEach(k => delete PROV_CIUDAD[k]);
+  proveedoresCargados = false; await cargarListaProveedores();
+  if(nombre !== viejo){
+    ["cp-proveedor", "pp-proveedor"].forEach(id => { const el = document.getElementById(id); if(el && el.value.trim() === viejo) el.value = nombre; });
+  }
+  await cargarTablaProveedores();
+  const aviso = document.getElementById("pl-count");
+  if(data && data.sin_cambios) aviso.textContent = "No había cambios que guardar.";
+  else if(data && data.nuevo && data.nuevo !== data.anterior) aviso.textContent = `Proveedor actualizado: ${data.anterior} → ${data.nuevo} (${data.compras} facturas y ${data.pagos} pagos).`;
+  else aviso.textContent = `Proveedor actualizado: ${nombre}.`;
+  provEditando = null;
+});
+document.getElementById("pl-buscar").addEventListener("input", pintarTablaProveedores);
+document.getElementById("pl-inactivos").addEventListener("change", pintarTablaProveedores);
 
 /* --- Facturas de proveedores --- */
 let FACTURAS_PROV = [];
